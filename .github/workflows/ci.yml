@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DJANGO_ENV: ci
-      
+
       DJANGO_SECRET_KEY: ci-secret
     services:
       postgres:
@@ -32,16 +32,46 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-      - name: Install dependencies
+      - name: Crear archivo .env
+        run: |
+          cat > .env <<'EOF'
+          DJANGO_ENV=ci
+          DJANGO_SECRET_KEY=ci-secret
+          DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
+          DJANGO_DEBUG=False
+          EOF
+          echo ".env creado:" && cat .env
+      - name: Instalar dependencias
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Run tests & coverage
+      - name: Migraciones (opcional para health)
         run: |
-          pytest --cov=cadmaflow --cov-report=xml --cov-report=term-missing
-      - name: Reportar covertura y mandar error si no pasa la covertura mayor al 85
+          export $(grep -v '^#' .env | xargs)
+          python manage.py migrate --noinput
+      - name: Levantar servidor y probar /health
         run: |
-          if [[ $(pytest --cov=cadmaflow --cov-report=xml --cov-report=term-missing | tail -n 1) < "85.00%" ]]; then
-            echo "La cobertura de pruebas es menor al 85%"
-            exit 1
-          fi
+          export $(grep -v '^#' .env | xargs)
+          python manage.py runserver 0.0.0.0:8000 &
+          SERVER_PID=$!
+          echo "PID=${SERVER_PID}" > server_pid.txt
+          echo "Esperando a que /health responda..."
+          for i in {1..20}; do
+            sleep 2
+            if curl -fsS http://127.0.0.1:8000/health/ | grep '"status":"ok"' >/dev/null; then
+              echo "Health OK"
+              break
+            fi
+            echo "Intento $i: aún no responde"
+            if [ $i -eq 20 ]; then
+              echo "El endpoint /health no respondió a tiempo" >&2
+              kill $SERVER_PID || true
+              exit 1
+            fi
+          done
+          kill $SERVER_PID || true
+      # Paso original de instalación (reemplazado por 'Instalar dependencias')
+      # Ejecutar pruebas después de validar que el backend levanta
+      - name: Tests con cobertura (fail-under 85%)
+        run: |
+          pytest --cov=cadmaflow --cov-report=xml --cov-report=term-missing --cov-fail-under=85
