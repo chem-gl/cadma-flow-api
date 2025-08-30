@@ -1,0 +1,13 @@
+services:
+  web:
+    environment:
+      DJANGO_ENV: local
+      DJANGO_DEBUG: 'True'
+    command: bash -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - .:/app
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app

@@ -7,7 +7,7 @@ on:
     branches: [ main, master ]
 
 jobs:
-  test:
+  test-and-sonar:
     runs-on: ubuntu-latest
     env:
       DJANGO_ENV: ci
@@ -24,23 +24,20 @@ jobs:
           --health-cmd "pg_isready -U ci_user" --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install poetry
-          poetry install --no-interaction --no-root
-      - name: Run tests
+          pip install -r requirements.txt
+      - name: Run tests & coverage
         run: |
-          poetry run pytest
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-xml
-          path: coverage.xml
+          pytest --cov=cadmaflow --cov-report=xml --cov-report=term-missing
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v2
         env:
@@ -50,14 +47,5 @@ jobs:
           args: >-
             -Dsonar.projectKey=cadma-flow
             -Dsonar.organization=${SONAR_ORG}
-            -Dsonar.coverage.exclusions=tests/**
-  quality-gate:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: SonarSource/sonarcloud-github-action@v2
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >-
-            sonar.qualitygate.wait=true
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.qualitygate.wait=true
