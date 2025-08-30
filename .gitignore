@@ -1,0 +1,113 @@
+# Python / Django
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*$py.class
+*.pyc
+
+# Python caches & tooling
+.cache/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.benchmarks/
+pip-wheel-metadata/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Byte-compiled / optimized / DLL files
+*.so
+
+# Virtual environments / build
+.venv/
+.envrc
+build/
+dist/
+.eggs/
+*.egg-info/
+.eggs/
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+junit*.xml
+coverage-html/
+
+# Profiling / performance
+*.prof
+*.pstats
+profiling/
+
+# Django
+*.log
+local_settings.py
+media/
+staticfiles/
+# SQLite (dev)
+db.sqlite3
+db.sqlite3-journal
+
+# Translations
+locale/*/LC_MESSAGES/*.mo
+locale/*/LC_MESSAGES/*.pot
+
+# Env files (keep the example)
+.env
+.env.*
+!.env.example
+
+# PID / runtime files
+*.pid
+celerybeat-schedule*
+celerybeat.pid
+
+# OpenAPI / schema generated files (if exported locally)
+schema.yml
+schema.yaml
+schema.json
+openapi-schema.yml
+openapi-schema.json
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Sonar / Reports
+.sonar/
+.scannerwork/
+sonar-report.json
+
+# Node / Front-end (if later added)
+node_modules/
+dist/
+build/
+coverage/
+
+# Migrations cache (keep actual migrations committed)
+**/migrations/__pycache__/
+
+# Misc
+pytestdebug.log
+*.orig
+*.rej
+*.bak
+*.tmp
+*.swp
+*.swo
+*~
+.DS_Store
+.history/
+
+# Docker compose override locals (optional)
+docker-compose.override.yml
+
+# Wheelhouse
+wheelhouse/
