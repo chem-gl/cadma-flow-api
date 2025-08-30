@@ -7,8 +7,6 @@ extended/overridden by the environment specific modules.
 
 import os
 from pathlib import Path
-from urllib.parse import urlparse
-
 SQLITE_ENGINE = 'django.db.backends.sqlite3'
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -70,56 +68,13 @@ TEMPLATES = [
 WSGI_APPLICATION = 'cadmaflow.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
-_db_url = os.getenv('DATABASE_URL')
-if _db_url:
-    parsed = urlparse(_db_url)
-    if parsed.scheme.startswith('postgres'):
-        DB_ENGINE = 'django.db.backends.postgresql'
-    elif parsed.scheme in ('mysql', 'mariadb'):
-        DB_ENGINE = 'django.db.backends.mysql'
-    elif parsed.scheme in ('sqlite', 'file'):
-        DB_ENGINE = SQLITE_ENGINE
-    else:
-        DB_ENGINE = SQLITE_ENGINE
-
-    if DB_ENGINE == SQLITE_ENGINE:
-        DB_NAME = parsed.path.lstrip('/') or (BASE_DIR / 'db.sqlite3')
-    else:
-        DB_NAME = parsed.path.lstrip('/')
-
-    DATABASES = {
-        'default': {
-            'ENGINE': DB_ENGINE,
-            'NAME': DB_NAME,
-            'USER': parsed.username or '',
-            'PASSWORD': parsed.password or '',
-            'HOST': parsed.hostname or '',
-            'PORT': parsed.port or '',
-        }
+# Database: keep deterministic sqlite base (other envs override explicitly)
+DATABASES = {
+    'default': {
+        'ENGINE': SQLITE_ENGINE,
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
-elif os.getenv('POSTGRES_DB'):
-    # Build from discrete POSTGRES_* env vars (preferred for docker-compose)
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.getenv('POSTGRES_DB'),
-            'USER': os.getenv('POSTGRES_USER', ''),
-            'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
-            'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
-            'PORT': os.getenv('POSTGRES_PORT', '5432'),
-        }
-    }
-else:
-    # Final fallback (development only)
-    DATABASES = {
-        'default': {
-            'ENGINE': SQLITE_ENGINE,
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
+}
 
 
 # Password validation
