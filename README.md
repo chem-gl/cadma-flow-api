@@ -1,14 +1,4 @@
 # CADMA Flow
-
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=cadma-flow&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=cadma-flow)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=cadma-flow&metric=coverage)](https://sonarcloud.io/summary/new_code?id=cadma-flow)
-[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=cadma-flow&metric=bugs)](https://sonarcloud.io/summary/new_code?id=cadma-flow)
-[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=cadma-flow&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=cadma-flow)
-[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=cadma-flow&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=cadma-flow)
-[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=cadma-flow&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=cadma-flow)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=cadma-flow&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=cadma-flow)
-[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=cadma-flow&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=cadma-flow)
-
 Proyecto Django configurado con:
 
 - Django 5
