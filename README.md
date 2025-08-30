@@ -1,92 +1,121 @@
 # CADMA Flow
-Proyecto Django configurado con:
+Servicio Django / DRF listo para desarrollo rápido y CI básico.
 
-- Django 5
-- Pytest + cobertura (coverage.xml)
-- Integración SonarCloud
-- Workflow GitHub Actions (tests + análisis Sonar + Quality Gate)
-- Carga dinámica de settings por `DJANGO_ENV` (local, test, ci, base)
+## Stack principal
+* Python 3.12
+* Django 5
+* Django REST Framework
+* drf-spectacular (OpenAPI / Swagger / Redoc)
+* Pytest + coverage
+* Carga dinámica de settings vía `DJANGO_ENV` (`local`, `test`, `ci`, `base`)
+* GitHub Actions (tests + verificación de endpoint health)
+
+## Settings dinámicos
+El módulo `cadmaflow/settings/__init__.py` selecciona el archivo según `DJANGO_ENV` con la siguiente prioridad:
+1. Variable de entorno `DJANGO_ENV`
+2. Si se ejecuta pytest y no está definida, fuerza `test`
+3. Fallback `local`
 
 ## Variables de entorno clave
+Obligatorias / recomendadas:
+* `DJANGO_ENV` (local|test|ci|base)
+* `DJANGO_SECRET_KEY`
+* `DJANGO_ALLOWED_HOSTS` (lista separada por comas)
+* `DJANGO_DEBUG` (1/0)
 
-- `DJANGO_ENV` (local|test|ci|base)
-- `DJANGO_SECRET_KEY`
-- `DJANGO_ALLOWED_HOSTS` (lista separada por comas)
+Base de datos (PostgreSQL opcional):
+* `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`
+	o `DATABASE_URL` (`postgres://user:pass@host:5432/db`)
 
-En CI se usan secrets: `SONAR_TOKEN` y `SONAR_ORG`.
-
-Archivo `.env` (crear desde `.env.example`):
-```
+Ejemplo `.env` (copiar desde `.env.example`):
+```bash
 DJANGO_ENV=local
 DJANGO_SECRET_KEY=clave-super-secreta
+DJANGO_DEBUG=1
 DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+POSTGRES_DB=cadma
+POSTGRES_USER=cadma
+POSTGRES_PASSWORD=cadma
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
 ```
 
-Cuando ejecutas pytest no necesitas exportar `DJANGO_ENV`; si no está fijado se fuerza `test` automáticamente.
+Al correr `pytest` no hace falta exportar `DJANGO_ENV`; si no existe se usa `test` automáticamente.
 
-## Ejecutar local
-
-### Con pyenv + pip
+## Instalación local (pyenv + pip)
 ```bash
-pyenv install 3.12.4 # si no lo tienes
+pyenv install 3.12.4 || true
 pyenv virtualenv 3.12.4 cadma-flow || true
 pyenv local cadma-flow
 pip install -U pip
 pip install -r requirements.txt
-export DJANGO_ENV=local
+cp .env.example .env  # Ajusta valores
 python manage.py migrate
 python manage.py runserver
 ```
 
-## Ejecutar tests
-
-```bash
-pytest
-```
-
-## Documentación automática de calidad (SonarCloud)
-
-El análisis de calidad y seguridad se ejecuta automáticamente en cada push y pull request a `main`/`master` mediante GitHub Actions (`.github/workflows/ci.yml`).
-
-Resumen y métricas: https://sonarcloud.io/summary/new_code?id=cadma-flow
-
-### Variables / Secrets requeridos en el repositorio
-
-- `SONAR_TOKEN`: Token de proyecto/usuario con permiso de análisis.
-- `SONAR_ORG`: Clave de la organización en SonarCloud.
-
-### Ejecución manual local
-
-```bash
-export SONAR_TOKEN=xxxx
-export SONAR_ORG=tu_org
-pytest --cov=cadmaflow --cov-report=xml
-pip install sonar-scanner-cli==5.0.1.3006
-sonar-scanner -Dsonar.login=$SONAR_TOKEN -Dsonar.organization=$SONAR_ORG -Dproject.settings=sonar-project.properties
-```
-
-Los badges de este README se actualizan automáticamente tras cada análisis exitoso.
-
-## Autoreload en desarrollo
-
-Con Docker (usa volume + autoreload estándar de Django):
-
+## Docker (desarrollo con autoreload)
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
+Edita código y Django recarga. Si cambias dependencias reconstruye la imagen.
 
-Puedes editar código y el servidor se recarga automáticamente. Para cambios en dependencias vuelve a reconstruir (`--build`).
+## Migraciones y superusuario
+```bash
+python manage.py makemigrations
+python manage.py migrate
+python manage.py createsuperuser
+```
+Admin: http://localhost:8000/admin/
 
-## Health check
+## Tests y cobertura
+```bash
+pytest
+pytest --cov=cadmaflow --cov-report=term-missing --cov-report=xml
+```
+`coverage.xml` se genera para integraciones externas si hicieran falta.
 
-Ruta: `GET /health/` devuelve `{ "status": "ok" }`.
+## Endpoint Health
+`GET /health/` -> `{ "status": "ok" }` (usado en CI para comprobar arranque).
 
-## Documentación de API (Swagger / OpenAPI)
+## Documentación de API
+* Esquema: `GET /schema/`
+* Swagger UI: `GET /docs/swagger/`
+* Redoc: `GET /docs/redoc/`
 
-Endpoints generados automáticamente con drf-spectacular:
+Ejemplo de documentación con decorador:
+```python
+from drf_spectacular.utils import extend_schema
 
-- Esquema JSON: `GET /schema/` (OpenAPI 3)
-- Swagger UI: `GET /docs/swagger/`
-- Redoc: `GET /docs/redoc/`
+@extend_schema(summary="Ping", description="Devuelve pong")
+class PingView(APIView):
+		...
+```
 
-Para agregar nuevas rutas documentadas, usa vistas DRF (APIView / ViewSets) y decoradores `@extend_schema`.
+## Crear nueva app
+```bash
+python manage.py startapp nombre_app
+```
+Añade la app a `INSTALLED_APPS`.
+
+## Producción (resumen)
+* `DJANGO_ENV=base` o un settings específico
+* `DEBUG=0`
+* Secret robusto
+* Hosts configurados
+* Servir estáticos con `collectstatic` detrás de un servidor (nginx + gunicorn/uvicorn)
+* TLS, logs y backups de DB
+
+## Tabla rápida de problemas
+| Problema | Posible causa | Acción |
+|----------|---------------|--------|
+| 404 /docs/swagger/ | Falta drf-spectacular | Revisar `INSTALLED_APPS` |
+| Error conexión DB | Vars Postgres incompletas | Ver `.env` |
+| Cobertura baja | Faltan tests | Añadir pruebas |
+| 400 CSRF en dev | Request sin cookie | Usar sesión o desactivar según caso |
+
+## Licencia
+Revisar archivo `LICENSE`.
+
+---
+Contribuciones bienvenidas. Mantén los tests verdes antes de hacer PR.
