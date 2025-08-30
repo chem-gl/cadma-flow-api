@@ -37,7 +37,6 @@ jobs:
           DJANGO_ENV=ci
           DJANGO_SECRET_KEY=ci-secret
           DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
-          DJANGO_DEBUG=False
           EOF
           echo ".env creado:" && cat .env
       - name: Instalar dependencias
