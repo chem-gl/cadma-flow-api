@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DJANGO_ENV: ci
+      
       DJANGO_SECRET_KEY: ci-secret
     services:
       postgres:
