@@ -1,0 +1,14 @@
+[run]
+branch = True
+source = cadmaflow
+parallel = True
+omit =
+	cadmaflow/asgi.py
+	cadmaflow/wsgi.py
+	cadmaflow/urls.py
+	cadmaflow/core/urls.py
+
+[report]
+show_missing = True
+skip_covered = True
+fail_under = 90
