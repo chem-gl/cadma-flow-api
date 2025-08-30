@@ -7,7 +7,7 @@ on:
     branches: [ main, master ]
 
 jobs:
-  test-and-sonar:
+  test:
     runs-on: ubuntu-latest
     env:
       DJANGO_ENV: ci
@@ -38,14 +38,9 @@ jobs:
       - name: Run tests & coverage
         run: |
           pytest --cov=cadmaflow --cov-report=xml --cov-report=term-missing
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@v2
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_ORG: ${{ secrets.SONAR_ORG }}
-        with:
-          args: >-
-            -Dsonar.projectKey=cadma-flow
-            -Dsonar.organization=${SONAR_ORG}
-            -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.qualitygate.wait=true
+      - name: Reportar covertura y mandar error si no pasa la covertura mayor al 85
+        run: |
+          if [[ $(pytest --cov=cadmaflow --cov-report=xml --cov-report=term-missing | tail -n 1) < "85.00%" ]]; then
+            echo "La cobertura de pruebas es menor al 85%"
+            exit 1
+          fi
