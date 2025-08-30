@@ -7,6 +7,7 @@ extended/overridden by the environment specific modules.
 
 import os
 from pathlib import Path
+
 SQLITE_ENGINE = 'django.db.backends.sqlite3'
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
