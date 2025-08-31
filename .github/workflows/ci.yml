@@ -7,7 +7,7 @@ on:
     branches: [ main, master ]
 
 jobs:
-  test:
+  test-and-sonar:
     runs-on: ubuntu-latest
     env:
       DJANGO_ENV: ci
