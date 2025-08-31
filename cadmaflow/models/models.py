@@ -1,52 +1,137 @@
 # molecules/models.py
+"""Modelos concretos de la base de datos para el sistema de workflow molecular.
+
+Este archivo define los modelos persistentes de dominio que sustentan:
+- Entidades químicas básicas (Molecule)
+- Agrupaciones (MolecularFamily)
+- Definición (Workflow) y ramificación lógica (WorkflowBranch)
+- Ejecuciones (WorkflowExecution) y snapshots de pasos (StepExecution)
+- Eventos de trazabilidad (WorkflowEvent)
+- Selección activa de variantes de propiedades (DataSelection)
+
+Se añaden docstrings detallados alineados con la especificación del README.
 """
-Modelos concretos de la base de datos para el sistema de workflow molecular.
-"""
+from __future__ import annotations
+
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.utils import timezone
 
+# Ensure provider models register before migration autodetector runs
+from . import providers  # noqa: F401
 from .abstract_models import AbstractMolecularData
 from .choices import StatusChoices
 
 User = get_user_model()
 
+
+# ---------------------------------------------------------------------------
+# Workflow (Blueprint lógico)
+# ---------------------------------------------------------------------------
+class Workflow(models.Model):
+    """Blueprint lógico de un flujo.
+
+    Responsabilidades:
+    - Identificador reutilizable (``key``) y metadatos (``name``/``description``)
+    - Estado global simple (``status``)
+    - Relaciones de branching entre definiciones (``branch_of`` / ``root_branch``)
+    - Punto de anclaje para ejecuciones concretas (``WorkflowExecution``)
+    - Posible congelación lógica (freeze) para impedir cambios accidentales
+
+    NOTA: La secuencia de steps no se almacena todavía; la orquestación vive en
+    clases Python (``FlowBase``). Podría añadirse un campo JSON si se requiere
+    persistir configuración dinámica.
+    """
+
+    key = models.CharField(max_length=50, unique=True, help_text="Identificador estable para referenciar el workflow")
+    name = models.CharField(max_length=100, help_text="Nombre legible del workflow")
+    description = models.TextField(blank=True, help_text="Descripción funcional / propósito")
+
+    status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.PENDING)
+
+    branch_of = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.SET_NULL, related_name='child_branches',
+        help_text="Workflow padre del que se bifurca esta definición"
+    )
+    root_branch = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.SET_NULL, related_name='descendants',
+        help_text="Workflow raíz del árbol al que pertenece esta rama"
+    )
+    branch_label = models.CharField(max_length=100, blank=True, help_text="Etiqueta legible de la rama (ej: 'v2-high-temp')")
+
+    frozen_at = models.DateTimeField(null=True, blank=True, help_text="Momento en que se congeló la definición (inmutable)")
+    frozen_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
+                                  related_name='frozen_workflows', help_text="Usuario que congeló la definición")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["key"]
+        indexes = [
+            models.Index(fields=["status"]),
+            models.Index(fields=["branch_of"]),
+            models.Index(fields=["root_branch"]),
+        ]
+
+    def save(self, *args, **kwargs):  # pragma: no cover
+        if self.pk is None and self.branch_of and not self.root_branch:
+            self.root_branch = self.branch_of.root_branch or self.branch_of
+        super().save(*args, **kwargs)
+
+    def freeze(self, user):  # pragma: no cover
+        """Congelar la definición para evitar cambios lógicos (soft lock)."""
+        self.frozen_at = timezone.now()
+        self.frozen_by = user
+        self.save(update_fields=["frozen_at", "frozen_by", "updated_at"])
+
+    def branch(self, *, branch_label: str | None = None, reason: str | None = None, user=None) -> 'Workflow':
+        """Crear una nueva rama (blueprint hijo) de este workflow.
+
+        Args:
+            branch_label: Etiqueta legible (autogenerada si no se proporciona).
+            reason: Texto opcional de justificación (no persistido actualmente).
+            user: Usuario que inicia la rama (reservado para auditoría futura).
+        Returns:
+            Workflow: nueva instancia hija.
+        """
+        new_wf = Workflow.objects.create(
+            key=f"{self.key}-br-{int(timezone.now().timestamp())}",
+            name=self.name,
+            description=self.description,
+            status=StatusChoices.PENDING,
+            branch_of=self,
+            root_branch=self.root_branch or self,
+            branch_label=branch_label or f"branch-{timezone.now().strftime('%Y%m%d%H%M%S')}",
+        )
+        # reason podría registrarse en un WorkflowEvent futuro
+        return new_wf
+
+    def __str__(self):  # pragma: no cover
+        return f"WF:{self.key} - {self.name}"
+
+
+# ---------------------------------------------------------------------------
+# Molecule
+# ---------------------------------------------------------------------------
 class Molecule(models.Model):
-    """
-    Modelo para representar una molécula única.
-    
-    Propósito:
-    - Almacenar la información fundamental de una molécula
-    - Servir como punto central de referencia para todos los datos moleculares
-    - Proporcionar identificadores únicos para la molécula (SMILES, InChI, InChIKey)
-    
-    Nota: Este modelo es la entidad central del sistema, todos los datos
-    moleculares se relacionan con una instancia de Molecule.
-    """
-    
-    # Identificadores únicos para la molécula
+    """Entidad central que representa una molécula única."""
+
     smiles = models.TextField(unique=True)
     inchi = models.TextField(unique=True)
     inchikey = models.CharField(max_length=27, unique=True)
-    
-    # Información básica de la molécula
-    molecular_formula = models.CharField(max_length=100)
-    molecular_weight = models.FloatField()
     common_name = models.CharField(max_length=255, blank=True)
-    
-    # Banderas especiales
-    is_reference = models.BooleanField(default=False)
-    
-    # Timestamps
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
-    def __str__(self):
+
+    def __str__(self):  # pragma: no cover
         return f"{self.common_name or 'Molecule'} ({self.inchikey})"
 
     # --- Data helpers -------------------------------------------------
     def get_data(self, data_class: type[AbstractMolecularData], *, source: str | None = None,
                  user_tag: str | None = None):
+        """Obtener QuerySet filtrado de instancias de datos para esta molécula."""
         qs = data_class.objects.filter(molecule=self)
         if source:
             qs = qs.filter(source=source)
@@ -56,6 +141,7 @@ class Molecule(models.Model):
 
     def get_or_create_data(self, data_class: type[AbstractMolecularData], *, method: str,
                             config: dict | None = None, user_tag: str | None = None):
+        """Recuperar (o crear) un dato usando el método de obtención indicado."""
         existing = self.get_data(data_class, user_tag=user_tag)
         if existing.exists():
             return existing.first(), False
@@ -64,174 +150,116 @@ class Molecule(models.Model):
 
     def ensure_all(self, data_reqs: list[tuple[type[AbstractMolecularData], str]], *,
                    config_map: dict | None = None):
-        results = {}
+        """Garantizar existencia de cada (Clase, método) retornando sus UUID."""
+        results: dict[str, str | None] = {}
         for cls, method in data_reqs:
             inst, _ = self.get_or_create_data(cls, method=method,
                                               config=(config_map or {}).get(cls.__name__))
-            results[cls.__name__] = inst.data_id if inst else None
+            results[cls.__name__] = str(inst.data_id) if inst else None
         return results
 
 
-class WorkflowDefinition(models.Model):
-    """Blueprint de un workflow (lista de steps y metadatos)."""
-    key = models.CharField(max_length=50, unique=True)
-    name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
-    # Lista ordenada de IDs de steps (referencia lógica)
-    steps_sequence = models.JSONField(default=list, help_text="Orden lógico de steps (IDs)")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):  # pragma: no cover - trivial
-        return f"{self.key} - {self.name}"
-
-
+# ---------------------------------------------------------------------------
+# MolecularFamily
+# ---------------------------------------------------------------------------
 class MolecularFamily(models.Model):
-    """
-    Grupo de moléculas relacionadas que se procesan juntas en un workflow.
-    
-    Propósito:
-    - Agrupar moléculas relacionadas para procesamiento conjunto
-    - Permitir el análisis comparativo entre familias moleculares
-    - Facilitar la gestión de conjuntos de datos en el workflow
-    
-    Características:
-    - Las familias pueden definirse específicamente para cada workflow
-    - Pueden usarse como resultado de un paso del workflow
-    - Tienen nombre y descripción para identificación clara
-    """
-    
-    # Identificador y nombre de la familia
+    """Agrupa moléculas relacionadas para procesamiento conjunto."""
+
     family_id = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    
-    # Relación many-to-many con las moléculas miembros
+
     members = models.ManyToManyField(Molecule, related_name="families")
-    
-    # Metadata
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
-    def __str__(self):
+
+    def __str__(self):  # pragma: no cover
         return f"{self.family_id} - {self.name}"
 
 
+# ---------------------------------------------------------------------------
+# WorkflowBranch
+# ---------------------------------------------------------------------------
 class WorkflowBranch(models.Model):
-    """
-    Representa una rama de ejecución del flujo de trabajo.
-    
-    Propósito:
-    - Permitir diferentes caminos de ejecución dentro de un workflow
-    - Gestionar selecciones específicas de datos para cada rama
-    - Mantener el historial de bifurcaciones del workflow
-    
-    Características:
-    - Cada rama puede tener su propia configuración de obtención de datos
-    - Las ramas pueden tener una relación padre-hijo para tracking
-    - Permiten experimentación con diferentes configuraciones
-    """
-    
-    # Identificador único de la rama
+    """Rama lógica para selección de variantes de datos dentro de un workflow."""
+
     branch_id = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    
-    # Relación con la definición del workflow
-    workflow_definition = models.ForeignKey('WorkflowDefinition', on_delete=models.CASCADE,
-                                          related_name='branches')
-    
-    # Relaciones de ramificación (para tracking de bifurcaciones)
-    parent_branch = models.ForeignKey('self', on_delete=models.SET_NULL, 
-                                    null=True, blank=True, related_name='children')
+
+    workflow = models.ForeignKey('cadmaflow_models.Workflow', on_delete=models.CASCADE,
+                                 related_name='branches', help_text="Workflow blueprint al que pertenece la rama")
+
+    parent_branch = models.ForeignKey('self', on_delete=models.SET_NULL,
+                                      null=True, blank=True, related_name='children')
     branch_reason = models.TextField(blank=True)
-    
-    # Preferencias de selección de datos para esta rama
-    data_selection_preferences = models.JSONField(
-        default=dict,
-        help_text="Preferencias de selección de datos para esta rama"
-    )
-    
-    # Estado de la rama
+
+    data_selection_preferences = models.JSONField(default=dict, help_text="Preferencias de selección de datos para esta rama")
+
     is_active = models.BooleanField(default=True)
-    
-    # Timestamps
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
-    def __str__(self):
+
+    def __str__(self):  # pragma: no cover
         return f"{self.branch_id} - {self.name}"
 
     def fork(self, *, new_branch_id: str, name: str, reason: str | None = None,
              preference_overrides: dict | None = None):
-        """Crea una nueva rama hija heredando preferencias."""
-        data_prefs = dict(self.data_selection_preferences)
+        """Crear rama hija heredando preferencias (con overrides opcionales)."""
+        prefs = dict(self.data_selection_preferences)
         if preference_overrides:
-            data_prefs.update(preference_overrides)
+            prefs.update(preference_overrides)
         return WorkflowBranch.objects.create(
             branch_id=new_branch_id,
             name=name,
             description=self.description,
-            workflow_definition=self.workflow_definition,
+            workflow=self.workflow,
             parent_branch=self,
-            branch_reason=reason,
-            data_selection_preferences=data_prefs,
+            branch_reason=reason or "",
+            data_selection_preferences=prefs,
         )
 
 
+# ---------------------------------------------------------------------------
+# WorkflowExecution
+# ---------------------------------------------------------------------------
 class WorkflowExecution(models.Model):
-    """
-    Ejecución de un workflow para múltiples familias.
-    
-    Propósito:
-    - Representar una instancia específica de ejecución de workflow
-    - Gestionar el estado y progreso de la ejecución
-    - Almacenar resultados y métricas de la ejecución
-    
-    Características:
-    - Puede procesar múltiples familias moleculares simultáneamente
-    - Mantiene relación con una rama específica del workflow
-    - Registra configuración específica por familia
-    """
-    
-    # Identificador único de la ejecución
+    """Ejecución concreta de un Workflow sobre familias de moléculas."""
+
     execution_id = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    
-    # Relaciones con definición de workflow y rama
-    workflow_definition = models.ForeignKey('WorkflowDefinition', on_delete=models.CASCADE,
-                                          related_name='executions')
-    branch = models.ForeignKey(WorkflowBranch, on_delete=models.CASCADE,
-                             related_name='executions')
-    
-    # Familias moleculares procesadas en esta ejecución
+
+    workflow = models.ForeignKey('cadmaflow_models.Workflow', on_delete=models.CASCADE,
+                                 related_name='executions', help_text="Workflow blueprint de esta ejecución")
+    branch = models.ForeignKey(WorkflowBranch, on_delete=models.CASCADE, related_name='executions')
+
     families = models.ManyToManyField(MolecularFamily, related_name='executions')
-    
-    # Configuración de obtención de datos por familia
-    family_data_config = models.JSONField(
-        default=dict,
-        help_text="Configuración de métodos de obtención de datos por familia"
-    )
-    
-    # Estado de la ejecución
+
+    family_data_config = models.JSONField(default=dict, help_text="Configuración de métodos de obtención por familia")
+
     status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.PENDING)
     current_step = models.CharField(max_length=100, blank=True)
-    
-    # Resultados y métricas
+    current_step_index = models.IntegerField(default=0)
+    parent_execution = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL,
+                                         related_name='child_executions')
+    branch_label = models.CharField(max_length=100, blank=True)
+
     execution_results = models.JSONField(default=dict, blank=True)
     execution_metrics = models.JSONField(default=dict, blank=True)
-    
-    # Timestamps
+
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(blank=True, null=True)
     finished_at = models.DateTimeField(blank=True, null=True)
-    
-    def __str__(self):
+
+    def __str__(self):  # pragma: no cover
         return f"{self.execution_id} - {self.name}"
 
-    # --- Config helpers -----------------------------------------------
+    # ---------------- Configuración de métodos -----------------------
     def set_data_retrieval_method(self, family_id: str, data_class_name: str, method: str):
+        """Registrar método de obtención (se guarda en ``family_data_config``)."""
         cfg = self.family_data_config
         fam_cfg = cfg.setdefault(family_id, {})
         fam_cfg[data_class_name] = method
@@ -239,26 +267,30 @@ class WorkflowExecution(models.Model):
         self.save(update_fields=["family_data_config", "updated_at"]) if hasattr(self, 'updated_at') else self.save()
 
     def get_data_retrieval_method(self, family_id: str, data_class_name: str) -> str | None:
+        """Obtener método configurado para la combinación (familia, clase)."""
         return self.family_data_config.get(family_id, {}).get(data_class_name)
 
-    # --- Branching ----------------------------------------------------
-    def fork_execution(self, *, new_execution_id: str, target_branch: 'WorkflowBranch'):
-        """Clona esta ejecución en otra rama para explorar un camino alterno."""
+    # ---------------- Branching sencillo -----------------------------
+    def fork_execution(self, *, new_execution_id: str, target_branch: WorkflowBranch):
+        """Clonar ejecución hacia otra rama (sin clonar StepExecutions)."""
         clone = WorkflowExecution.objects.create(
             execution_id=new_execution_id,
             name=self.name + f" (fork:{target_branch.branch_id})",
             description=self.description,
-            workflow_definition=self.workflow_definition,
+            workflow=self.workflow,
             branch=target_branch,
             family_data_config=self.family_data_config,
+            parent_execution=self,
+            branch_label=target_branch.branch_id,
         )
         clone.families.set(self.families.all())
         clone.log_event(event_type="FORK", details={"from": self.execution_id, "to_branch": target_branch.branch_id})
         return clone
 
-    # --- Step orchestration ------------------------------------------
+    # ---------------- Orquestación de steps --------------------------
     def start_step(self, *, step_id: str, step_name: str, order: int,
                    frozen_snapshot: dict, retrieval_methods: dict):
+        """Crear registro StepExecution RUNNING con snapshot congelado de entrada."""
         return StepExecution.objects.create(
             execution=self,
             step_id=step_id,
@@ -272,17 +304,18 @@ class WorkflowExecution(models.Model):
         )
 
     def complete_step(self, step_exec: 'StepExecution', results: dict):
-        """Finaliza un step, guarda resultados y registra evento de trazabilidad."""
+        """Marcar un step como COMPLETED y avanzar punteros de ejecución."""
         step_exec.results = results
         step_exec.status = StatusChoices.COMPLETED
         step_exec.completed_at = timezone.now()
         step_exec.save()
         self.current_step = step_exec.step_id
-        self.save(update_fields=["current_step"])  # lightweight update
+        self.current_step_index = step_exec.order + 1
+        self.save(update_fields=["current_step", "current_step_index"])
         self.log_event(event_type="STEP_COMPLETED", details={"step_id": step_exec.step_id})
 
-    def freeze_family_data(self):
-        """Crea un snapshot simple de IDs de datos por molécula/familia (ejemplo)."""
+    def freeze_family_data(self):  # simplificado
+        """Snapshot simple: {family_id: {inchikey: {id}}}. Extensible para propiedades."""
         snapshot: dict = {}
         for family in self.families.all():
             fam_block = snapshot.setdefault(family.family_id, {})
@@ -290,23 +323,26 @@ class WorkflowExecution(models.Model):
                 fam_block[molecule.inchikey] = {"id": molecule.id}
         return snapshot
 
-    # --- Traceability -------------------------------------------------
+    # ---------------- Trazabilidad -----------------------------------
     def log_event(self, *, event_type: str, details: dict | None = None):
+        """Registrar evento de ejecución (append-only)."""
         WorkflowEvent.objects.create(
             execution=self,
             event_type=event_type,
             details=details or {},
         )
 
-    def timeline(self):
+    def timeline(self):  # pragma: no cover
+        """Recuperar eventos ordenados cronológicamente (lista de dicts)."""
         return list(self.events.order_by("created_at").values("event_type", "details", "created_at"))
 
-    # --- Data selection (provider variants) -------------------------
+    # ---------------- Selección de variantes -------------------------
     def select_property_variant(self, *, molecule: Molecule, property_name: str,
                                 data_instance: AbstractMolecularData, user=None):
-        """Crea o actualiza la selección activa de una propiedad para una molécula.
+        """Crear/actualizar selección activa de una propiedad para la molécula.
 
-        No elimina variantes previas, sólo apunta a la escogida.
+        Tras actualizar, dispara lógica de auto-fork si la propiedad afectó
+        pasos ya completados.
         """
         ds, created = DataSelection.objects.update_or_create(
             execution=self,
@@ -327,17 +363,17 @@ class WorkflowExecution(models.Model):
             "data_id": str(ds.data_id),
             "created": created,
         })
-        # Verificar si la propiedad impacta pasos anteriores y auto-fork si es necesario
         self._auto_fork_if_impacts_completed_steps(property_name=property_name, molecule=molecule)
         return ds
 
     def get_selected_property(self, *, molecule: Molecule, property_name: str) -> AbstractMolecularData | None:
+        """Obtener instancia de dato actualmente seleccionada (o None)."""
         try:
             ds = DataSelection.objects.get(execution=self, branch=self.branch, molecule=molecule, property_name=property_name)
         except DataSelection.DoesNotExist:  # noqa: PERF203
             return None
         from .abstract_models import get_data_class_by_name
-        cls = get_data_class_by_name(ds.data_class)
+        cls = get_data_class_by_name(ds.data_class)  # type: ignore[arg-type]
         if not cls:
             return None
         try:
@@ -346,7 +382,7 @@ class WorkflowExecution(models.Model):
             return None
 
     def list_variants(self, *, molecule: Molecule, property_name: str):
-        """Lista todas las variantes de datos disponibles para esa molécula y propiedad."""
+        """Listar todas las variantes persistidas para la propiedad dada."""
         from .abstract_models import SUBCLASS_REGISTRY
         variants = []
         for cls in SUBCLASS_REGISTRY.values():
@@ -354,30 +390,34 @@ class WorkflowExecution(models.Model):
             variants.extend(list(qs))
         return variants
 
-    # --- Internal helpers -------------------------------------------
+    # ---------------- Helpers internos --------------------------------
     def _auto_fork_if_impacts_completed_steps(self, *, property_name: str, molecule: Molecule):
-        """Si la selección modificada afecta un paso ya completado, crear una rama nueva.
+        """Crear nueva rama si el cambio impacta pasos ya completados.
 
-        Estrategia:
-        - Revisar StepExecution completados que incluyan la propiedad en input_properties.
-        - Si alguno la incluye, crear nueva rama a partir de la actual (si no se creó ya en esta operación)
-          y clonar esta ejecución en la nueva rama, preservando selección original en la rama vieja.
-        - La nueva rama heredará todas las selecciones actuales (con el cambio) para continuar divergente.
+        Heurística básica: si algún StepExecution COMPLETED contiene la
+        propiedad en ``input_properties`` se crea fork. Pensado para pruebas.
         """
-        impacted = self.step_executions.filter(status=StatusChoices.COMPLETED, input_properties__contains=[property_name])
-        if not impacted.exists():
+        from django.db import connection
+        try:
+            if connection.features.supports_json_field_contains:  # type: ignore[attr-defined]
+                impacted_exists = self.step_executions.filter(
+                    status=StatusChoices.COMPLETED,
+                    input_properties__contains=[property_name],
+                ).exists()
+            else:  # pragma: no cover
+                raise AttributeError
+        except Exception:  # noqa: BLE001
+            impacted_exists = any(
+                property_name in (se.input_properties or [])
+                for se in self.step_executions.filter(status=StatusChoices.COMPLETED)
+            )
+        if not impacted_exists:
             return
-
-        # Crear nueva rama
         suffix = timezone.now().strftime('%Y%m%d%H%M%S')
         new_branch_id = f"{self.branch.branch_id}-var-{suffix}"
         new_branch = self.branch.fork(new_branch_id=new_branch_id, name=f"Variant {suffix}")
-
-        # Clonar ejecución
         new_exec_id = f"{self.execution_id}-var-{suffix}"
         new_exec = self.fork_execution(new_execution_id=new_exec_id, target_branch=new_branch)
-
-        # Clonar selecciones existentes hacia la nueva ejecución (incluye la modificación ya hecha)
         for sel in self.data_selections.all():
             DataSelection.objects.create(
                 execution=new_exec,
@@ -394,78 +434,127 @@ class WorkflowExecution(models.Model):
             "new_branch": new_branch.branch_id,
             "new_execution": new_exec.execution_id,
         })
-        # Nota: La nueva ejecución aún no tiene StepExecutions; se recalcularán pasos según necesidad.
+
+    # ---------------- Branching / Rewind API -------------------------
+    def branch_execution(self, *, branch_label: str | None = None, reason: str | None = None) -> 'WorkflowExecution':
+        """Crear nueva ejecución (rama) clonando snapshots COMPLETED existentes."""
+        new_wf = self.workflow.branch(branch_label=branch_label, reason=reason)
+        new_branch = self.branch.fork(new_branch_id=f"{self.branch.branch_id}-br-{timezone.now().strftime('%H%M%S')}",
+                                      name=new_wf.branch_label)
+        new_exec_id = f"{self.execution_id}-br-{timezone.now().strftime('%H%M%S')}"
+        new_exec = WorkflowExecution.objects.create(
+            execution_id=new_exec_id,
+            name=self.name,
+            description=self.description,
+            workflow=new_wf,
+            branch=new_branch,
+            family_data_config=self.family_data_config,
+            status=StatusChoices.PENDING,
+            parent_execution=self,
+            branch_label=new_wf.branch_label,
+        )
+        new_exec.families.set(self.families.all())
+        for se in self.step_executions.filter(status=StatusChoices.COMPLETED).order_by('order'):
+            StepExecution.objects.create(
+                execution=new_exec,
+                step_id=se.step_id,
+                step_name=se.step_name,
+                order=se.order,
+                input_data_snapshot=se.input_data_snapshot,
+                data_retrieval_methods=se.data_retrieval_methods,
+                results=se.results,
+                status=StatusChoices.COMPLETED,
+                started_at=se.started_at,
+                completed_at=se.completed_at,
+                data_frozen_at=se.data_frozen_at,
+                input_signature=se.input_signature,
+                input_properties=se.input_properties,
+                providers_used=se.providers_used,
+            )
+        new_exec.current_step_index = self.current_step_index
+        new_exec.save(update_fields=["current_step_index"])
+        self.log_event(event_type="EXEC_BRANCH_CREATED", details={"new_execution": new_exec.execution_id})
+        return new_exec
+
+    def rewind_to(self, *, step_order: int) -> 'WorkflowExecution':
+        """Crear rama truncada para re-ejecutar desde ``step_order``.
+
+        Copia snapshots hasta ese orden (inclusive) y elimina posteriores en la
+        nueva ejecución, avanzando el puntero para recomputar.
+        """
+        new_exec = self.branch_execution(branch_label=f"rewind-to-{step_order}")
+        new_exec.step_executions.filter(order__gt=step_order).delete()
+        new_exec.current_step_index = step_order + 1
+        new_exec.save(update_fields=["current_step_index"])
+        self.log_event(event_type="REWIND", details={
+            "from_execution": self.execution_id,
+            "rewind_to": step_order,
+            "new_execution": new_exec.execution_id,
+        })
+        return new_exec
+
+    @classmethod
+    def list_branch_executions(cls, root_workflow: Workflow):  # pragma: no cover
+        """Listar ejecuciones pertenecientes al árbol del workflow raíz."""
+        return cls.objects.filter(workflow__root_branch=root_workflow.root_branch or root_workflow)
 
 
+# ---------------------------------------------------------------------------
+# StepExecution
+# ---------------------------------------------------------------------------
 class StepExecution(models.Model):
-    """
-    Registra la ejecución de un paso específico en un workflow.
-    
-    Propósito:
-    - Trackear la ejecución individual de cada paso del workflow
-    - Almacenar snapshot de los datos utilizados (que se congelan)
-    - Mantener metadata sobre métodos de obtención utilizados
-    
-    Características:
-    - Congela los datos de entrada utilizados en el paso
-    - Registra los métodos de obtención utilizados para cada tipo de dato
-    - Permite reproducir exactamente el paso con los mismos datos
-    """
-    
-    # Relación con la ejecución de workflow
-    execution = models.ForeignKey(WorkflowExecution, on_delete=models.CASCADE,
-                                related_name='step_executions')
-    
-    # Identificación del paso
+    """Snapshot/Memento de la ejecución de un paso dentro de un workflow."""
+
+    execution = models.ForeignKey(WorkflowExecution, on_delete=models.CASCADE, related_name='step_executions')
+
     step_id = models.CharField(max_length=100)
     step_name = models.CharField(max_length=200)
     order = models.IntegerField()
-    
-    # Snapshot de datos de entrada utilizados (congelados)
-    input_data_snapshot = models.JSONField(
-        default=dict,
-        help_text="Snapshot de los datos de entrada utilizados en este paso"
-    )
-    
-    # Métodos de obtención utilizados
-    data_retrieval_methods = models.JSONField(
-        default=dict,
-        help_text="Métodos de obtención utilizados para cada tipo de dato"
-    )
-    
-    # Resultados del paso
+
+    input_data_snapshot = models.JSONField(default=dict, help_text="Snapshot congelado de entradas (moléculas/propiedades)")
+    data_retrieval_methods = models.JSONField(default=dict, help_text="Métodos de obtención usados")
     results = models.JSONField(default=dict, blank=True)
-    
-    # Estado del paso
+
     status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.PENDING)
-    
-    # Timestamps
+
     started_at = models.DateTimeField(blank=True, null=True)
     completed_at = models.DateTimeField(blank=True, null=True)
     data_frozen_at = models.DateTimeField(blank=True, null=True)
-    # Firma de entradas para detección de divergencias
-    input_signature = models.CharField(max_length=64, blank=True, help_text="SHA256 de entradas + parámetros + providers")
-    # Lista de propiedades usadas como entrada
+
+    input_signature = models.CharField(max_length=64, blank=True, help_text="SHA256 de entradas + parámetros")
     input_properties = models.JSONField(default=list, blank=True)
-    # Providers usados (ids de ProviderExecution) para reproducibilidad
     providers_used = models.JSONField(default=list, blank=True)
-    
+
     class Meta:
         ordering = ['order', 'started_at']
-    
-    def __str__(self):
+
+    def __str__(self):  # pragma: no cover
         return f"{self.execution.execution_id} - {self.step_name} ({self.status})"
 
     def mark_failed(self, message: str):
+        """Marcar el step como FALLIDO y registrar el error en resultados."""
         self.status = StatusChoices.FAILED
         self.results = {"error": message}
         self.completed_at = timezone.now()
         self.save()
         self.execution.log_event(event_type="STEP_FAILED", details={"step_id": self.step_id, "error": message})
 
+    # Alias compatibilidad (input_snapshot) ---------------------------------
+    @property
+    def input_snapshot(self):  # pragma: no cover
+        return self.input_data_snapshot
 
+    @input_snapshot.setter
+    def input_snapshot(self, value):  # pragma: no cover
+        self.input_data_snapshot = value
+
+
+# ---------------------------------------------------------------------------
+# WorkflowEvent
+# ---------------------------------------------------------------------------
 class WorkflowEvent(models.Model):
-    """Evento de trazabilidad asociado a una ejecución de workflow."""
+    """Evento de trazabilidad asociado a una ejecución (append-only)."""
+
     execution = models.ForeignKey(WorkflowExecution, on_delete=models.CASCADE, related_name="events")
     event_type = models.CharField(max_length=50, help_text="Tipo lógico del evento (STEP_COMPLETED, FORK, etc.)")
     details = models.JSONField(default=dict, blank=True)
@@ -477,15 +566,17 @@ class WorkflowEvent(models.Model):
             models.Index(fields=["execution", "event_type"]),
         ]
 
-    def __str__(self):  # pragma: no cover - trivial
+    def __str__(self):  # pragma: no cover
         return f"{self.execution.execution_id}:{self.event_type}@{self.created_at.isoformat()}"
 
 
+# ---------------------------------------------------------------------------
+# DataSelection
+# ---------------------------------------------------------------------------
 class DataSelection(models.Model):
-    """Selección activa de una variante de dato (por propiedad) en una ejecución y rama.
-
-    Permite que cada propiedad tenga múltiples variantes producidas por distintos providers
-    conservando sólo un puntero a la variante "activa" usada para steps posteriores.
+    """Selección activa de variante de propiedad dentro de una ejecución y rama.
+    Permite múltiples variantes coexistentes apuntando una sola como activa
+    para pasos posteriores.
     """
 
     execution = models.ForeignKey(WorkflowExecution, on_delete=models.CASCADE, related_name="data_selections")
@@ -494,7 +585,7 @@ class DataSelection(models.Model):
     property_name = models.CharField(max_length=100)
     data_class = models.CharField(max_length=150)
     data_id = models.UUIDField()
-    provider_execution = models.ForeignKey('ProviderExecution', on_delete=models.SET_NULL, null=True, blank=True)
+    provider_execution = models.ForeignKey('cadmaflow_models.ProviderExecution', on_delete=models.SET_NULL, null=True, blank=True)
     selected_at = models.DateTimeField(auto_now_add=True)
     selected_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
 
@@ -505,5 +596,5 @@ class DataSelection(models.Model):
             models.Index(fields=['property_name', 'provider_execution']),
         ]
 
-    def __str__(self):  # pragma: no cover - trivial
+    def __str__(self):  # pragma: no cover
         return f"Sel:{self.property_name} -> {self.data_class}({self.data_id})"

@@ -33,11 +33,6 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Type, TypeVar
 from django.contrib.auth import get_user_model
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
-
-# Django's Model base class already uses its own metaclass (ModelBase). Mixing
-# it directly with ``ABC`` and ``Generic`` creates a metaclass conflict. To keep
-# the ability to declare @abstractmethod while remaining a Django model we
-# merge ABCMeta with ModelBase into a lightweight custom metaclass.
 from django.db.models.base import ModelBase as DjangoModelBase
 from django.utils import timezone
 
@@ -114,8 +109,13 @@ class AbstractMolecularData(models.Model, metaclass=_AbstractDataModelBase):
 
     # Ejecución del provider que generó el dato (si aplica)
     provider_execution = models.ForeignKey(
-        'ProviderExecution', on_delete=models.SET_NULL, null=True, blank=True,
-        related_name='produced_data', help_text="Ejecución del provider que generó este dato"
+        'cadmaflow_models.ProviderExecution',  # referencia explícita app_label.modelo
+        on_delete=models.SET_NULL, null=True, blank=True,
+        # Usamos patrón con placeholder para evitar colisiones entre subclases concretas
+        # (cada modelo concreto obtendrá su propio reverse accessor en ProviderExecution):
+        #   provider_execution.<NombreModeloEnMinusculas>_records.all()
+        related_name='%(class)s_records',
+        help_text="Ejecución del provider que generó este dato"
     )
     
     # Etiqueta para distinguir diferentes entradas del usuario
