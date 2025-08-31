@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence, Type
 
+from cadmaflow.models import WorkflowExecution
 from cadmaflow.models.choices import StatusChoices
-from cadmaflow.models.models import WorkflowExecution
 
 from .steps import BaseStep
 

@@ -5,11 +5,12 @@ This aligns with the README architecture where steps live under workflows/steps.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Sequence, Type
+from typing import Dict, Optional, Sequence, Type
 
 from django.utils import timezone
 
 from cadmaflow.models.choices import StatusChoices
+from cadmaflow.utils.types import JSONDict, JSONValue
 
 
 class BaseStep(ABC):
@@ -31,13 +32,19 @@ class BaseStep(ABC):
     produced_data_classes: Sequence[Type] = ()  # Data classes produced/transformed by this step
 
     allows_branching: bool = True  # If True, parameter changes can spawn a new branch
-    parameters_schema: Dict[str, Any] = {}  # JSON schema-like structure describing accepted parameters
+    parameters_schema: Dict[str, JSONValue] = {}  # JSON schema-like structure describing accepted parameters
 
-    def prepare(self, step_execution, parameters: Dict[str, Any]):  # pragma: no cover - hook
+    def prepare(self, step_execution, parameters: Dict[str, JSONValue]):  # pragma: no cover - hook
         return None
 
-    @abstractmethod
-    def execute(self, step_execution, parameters=None):  # noqa: D401
+    def execute(self, step_execution, parameters: Optional[Dict[str, JSONValue]] = None):  # noqa: D401
+        """Template method that wraps concrete ``_process_step`` implementations.
+
+        Subclases sólo necesitan implementar ``_process_step``; este método
+        maneja la orquestación y la marca de finalización. Se mantiene
+        separado de ``_process_step`` para permitir pruebas unitarias/directas
+        del procesamiento puro si es necesario.
+        """
         input_data = step_execution.input_data_snapshot
         parameters = parameters or {}
         self.prepare(step_execution, parameters)
@@ -49,10 +56,10 @@ class BaseStep(ABC):
         return results
 
     @abstractmethod
-    def _process_step(self, input_data, step_execution, parameters):  # noqa: D401
+    def _process_step(self, input_data: JSONDict, step_execution, parameters: Dict[str, JSONValue]):  # noqa: D401
         raise NotImplementedError
 
-    def can_execute(self, execution):
+    def can_execute(self, execution) -> bool:
         for family in execution.families.all():
             for data_class in self.required_data_classes:
                 for _ in family.members.all():
@@ -61,7 +68,7 @@ class BaseStep(ABC):
                         return False
         return True
 
-    def get_progress(self, execution):
+    def get_progress(self, execution) -> float:
         total_required = 0
         completed = 0
         for family in execution.families.all():

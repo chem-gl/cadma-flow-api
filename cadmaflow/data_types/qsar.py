@@ -14,13 +14,14 @@ añadir providers específicos (ej: cálculos externos) agregando nuevas claves 
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional, Type
+from typing import Dict, Optional, Type
 
 from cadmaflow.models.abstract_models import AbstractMolecularData
 from cadmaflow.models.choices import NativeTypeChoices, SourceChoices
+from cadmaflow.utils.types import JSONValue
 
 
-class _BaseSimpleFloatData(AbstractMolecularData):
+class _BaseSimpleFloatData(AbstractMolecularData[float]):
     class Meta:
         abstract = True
 
@@ -37,7 +38,7 @@ class _BaseSimpleFloatData(AbstractMolecularData):
         return float(json.loads(serialized_value))
 
     @classmethod
-    def get_data_retrieval_methods(cls) -> Dict[str, Dict[str, Any]]:  # type: ignore[override]
+    def get_data_retrieval_methods(cls) -> Dict[str, Dict[str, JSONValue]]:  # type: ignore[override]
         return {
             "user_input": {
                 "description": "Valor proporcionado por el usuario",
@@ -46,7 +47,7 @@ class _BaseSimpleFloatData(AbstractMolecularData):
         }
 
     @classmethod
-    def retrieve_data(cls, molecule, method: str, *, config: Optional[Dict[str, Any]] = None,
+    def retrieve_data(cls, molecule, method: str, *, config: Optional[Dict[str, JSONValue]] = None,
                       user_tag: Optional[str] = None):  # type: ignore[override]
         methods = cls.get_data_retrieval_methods()
         if method not in methods:
@@ -69,7 +70,7 @@ class _BaseSimpleFloatData(AbstractMolecularData):
         raise NotImplementedError(method)
 
 
-class _BaseSimpleStringData(AbstractMolecularData):
+class _BaseSimpleStringData(AbstractMolecularData[str]):
     class Meta:
         abstract = True
 
@@ -86,7 +87,7 @@ class _BaseSimpleStringData(AbstractMolecularData):
         return str(json.loads(serialized_value))
 
     @classmethod
-    def get_data_retrieval_methods(cls) -> Dict[str, Dict[str, Any]]:  # type: ignore[override]
+    def get_data_retrieval_methods(cls) -> Dict[str, Dict[str, JSONValue]]:  # type: ignore[override]
         return {
             "user_input": {
                 "description": "Valor proporcionado por el usuario",
@@ -95,7 +96,7 @@ class _BaseSimpleStringData(AbstractMolecularData):
         }
 
     @classmethod
-    def retrieve_data(cls, molecule, method: str, *, config: Optional[Dict[str, Any]] = None,
+    def retrieve_data(cls, molecule, method: str, *, config: Optional[Dict[str, JSONValue]] = None,
                       user_tag: Optional[str] = None):  # type: ignore[override]
         methods = cls.get_data_retrieval_methods()
         if method not in methods:
@@ -147,4 +148,3 @@ class MutagenicityData(_BaseSimpleStringData):
     PROPERTY_NAME = "mutagenicity"
     class Meta:
         app_label = 'cadmaflow_models'
-

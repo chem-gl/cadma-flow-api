@@ -2,14 +2,14 @@
 import pytest
 
 from cadmaflow.data_types.qsar import LogPData
-from cadmaflow.models.choices import StatusChoices
-from cadmaflow.models.models import (
+from cadmaflow.models import (
     MolecularFamily,
     Molecule,
     Workflow,
     WorkflowBranch,
     WorkflowExecution,
 )
+from cadmaflow.models.choices import StatusChoices
 
 
 @pytest.mark.django_db

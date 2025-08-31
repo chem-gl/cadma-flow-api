@@ -26,6 +26,8 @@ if load_dotenv:  # Load .env without overriding explicit environment
 
 # If running under pytest and the user did NOT explicitly export DJANGO_ENV
 # we force the test settings even if .env provides a value.
+# If running under pytest and DJANGO_ENV wasn't explicitly exported we force 'test'.
+# If it WAS explicitly exported we respect the user's intention (e.g. forcing 'ci').
 if 'PYTEST_CURRENT_TEST' in os.environ and not _had_explicit_django_env:
 	os.environ['DJANGO_ENV'] = 'test'
 

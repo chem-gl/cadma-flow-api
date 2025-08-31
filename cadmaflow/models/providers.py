@@ -25,7 +25,6 @@ class ProviderExecution(models.Model):
     parameters = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.PENDING)
     error_message = models.TextField(blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)

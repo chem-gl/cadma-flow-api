@@ -1,25 +1,32 @@
-"""Domain models package for CADMA Flow.
+"""Dominio: interfaz pública de modelos (lazy import).
 
-Mantiene los modelos de dominio (moléculas, familias, workflow, providers).
-Se minimizan importaciones tempranas para evitar AppRegistryNotReady durante
-``django.setup()``. Use imports explícitos donde se necesiten las clases.
-
-AppConfig: ``cadmaflow.models.apps.ModelsConfig``
+Se evita cargar submódulos de modelos durante el arranque de Django para
+prevenir ``AppRegistryNotReady`` en escenarios de import temprano (pytest).
+Las clases se resuelven bajo demanda mediante ``__getattr__``.
 """
+from __future__ import annotations
 
-__all__ = [
-	# listado informativo (sin cargar realmente los modelos aquí)
-]
+from importlib import import_module
+from typing import Any, Dict
 
-# Asegurar registro de modelos definidos fuera de models.py
-# (Django sólo auto-detecta los modelos en models.py; los adicionales
-# deben importarse para que el AppRegistry los registre antes de las
-# comprobaciones de relaciones en migraciones / system checks.)
-try:  # pragma: no cover - import side-effect
-	from .providers import DataProvider, ProviderExecution  # noqa: F401
-except Exception:  # pragma: no cover - fallo silencioso en import temprano
-	# En escenarios de inicialización parcial (por ejemplo, importando
-	# sólo para lectura de metadatos) se puede ignorar; Django hará el
-	# import completo durante setup().
-	pass
+_EXPORT_MAP: Dict[str, str] = {
+	"Molecule": "cadmaflow.models.molecule",
+	"MolecularFamily": "cadmaflow.models.molecule",
+	"Workflow": "cadmaflow.models.workflow",
+	"WorkflowBranch": "cadmaflow.models.workflow",
+	"WorkflowExecution": "cadmaflow.models.execution",
+	"StepExecution": "cadmaflow.models.step_execution",
+	"WorkflowEvent": "cadmaflow.models.events",
+	"DataSelection": "cadmaflow.models.selection",
+	"ProviderExecution": "cadmaflow.models.providers",
+}
+
+__all__ = list(_EXPORT_MAP.keys())
+
+def __getattr__(name: str) -> Any:  # pragma: no cover - resolución dinámica
+	if name in _EXPORT_MAP:
+		module = import_module(_EXPORT_MAP[name])
+		return getattr(module, name)
+	raise AttributeError(name)
+
 

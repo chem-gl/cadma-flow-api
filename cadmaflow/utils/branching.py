@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from cadmaflow.models.models import StepExecution
+from cadmaflow.models import StepExecution
 
 
 def clone_step_executions(step_executions: Iterable[StepExecution], *, new_execution) -> None:  # pragma: no cover - helper

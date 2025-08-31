@@ -28,13 +28,15 @@ from __future__ import annotations
 
 import uuid
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, Optional, Type, TypeVar
+from typing import TYPE_CHECKING, Dict, Generic, Optional, Type, TypeVar
 
 from django.contrib.auth import get_user_model
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models.base import ModelBase as DjangoModelBase
 from django.utils import timezone
+
+from cadmaflow.utils.types import JSONValue
 
 from .choices import NativeTypeChoices, SourceChoices
 
@@ -58,7 +60,10 @@ T = TypeVar('T')
 SUBCLASS_REGISTRY: dict[str, Type['AbstractMolecularData']] = {}
 
 
-class AbstractMolecularData(models.Model, metaclass=_AbstractDataModelBase):
+T_co = TypeVar("T_co", covariant=False)
+
+
+class AbstractMolecularData(models.Model, Generic[T_co], metaclass=_AbstractDataModelBase):
     """
     CLASE ABSTRACTA BASE GENÉRICA para todos los datos moleculares.
     
@@ -171,7 +176,7 @@ class AbstractMolecularData(models.Model, metaclass=_AbstractDataModelBase):
         pass
     
     @abstractmethod
-    def get_value_type(self) -> Type[Any]:
+    def get_value_type(self) -> Type[T_co]:
         """
         DEBE SER IMPLEMENTADO POR SUBCLASES:
         Devuelve el tipo Python nativo que representa el valor.
@@ -182,7 +187,7 @@ class AbstractMolecularData(models.Model, metaclass=_AbstractDataModelBase):
         pass
     
     @abstractmethod
-    def serialize_value(self, value: Any) -> str:
+    def serialize_value(self, value: T_co) -> str:
         """
         DEBE SER IMPLEMENTADO POR SUBCLASES:
         Convierte el valor nativo a formato string para almacenamiento.
@@ -196,7 +201,7 @@ class AbstractMolecularData(models.Model, metaclass=_AbstractDataModelBase):
         pass
     
     @abstractmethod
-    def deserialize_value(self, serialized_value: str) -> Any:
+    def deserialize_value(self, serialized_value: str) -> T_co:
         """
         DEBE SER IMPLEMENTADO POR SUBCLASES:
         Convierte el valor serializado de vuelta a formato nativo.
@@ -212,7 +217,7 @@ class AbstractMolecularData(models.Model, metaclass=_AbstractDataModelBase):
         """
         pass
     
-    def validate_value_type(self, value: Any) -> Any:
+    def validate_value_type(self, value: object) -> T_co:
         """Basic runtime type validation; deep element checks intentionally omitted.
 
         (Se puede extender con validación profunda si es necesario.)
@@ -222,7 +227,7 @@ class AbstractMolecularData(models.Model, metaclass=_AbstractDataModelBase):
             raise TypeError(f"Se esperaba {expected}, se obtuvo {type(value)}")
         return value
     
-    def get_value(self) -> Any:
+    def get_value(self) -> T_co:
         """
         Obtiene el valor en su formato nativo con validación de tipo.
         
@@ -238,7 +243,7 @@ class AbstractMolecularData(models.Model, metaclass=_AbstractDataModelBase):
         except (TypeError, ValueError) as e:
             raise ValueError(f"Error al obtener valor: {e}") from e
     
-    def set_value(self, value: Any) -> None:
+    def set_value(self, value: T_co) -> None:
         """
         Establece el valor, validando el tipo y serializándolo para almacenamiento.
         
@@ -269,7 +274,7 @@ class AbstractMolecularData(models.Model, metaclass=_AbstractDataModelBase):
     
     @classmethod
     @abstractmethod
-    def get_data_retrieval_methods(cls) -> Dict[str, Dict[str, Any]]:
+    def get_data_retrieval_methods(cls) -> Dict[str, Dict[str, JSONValue]]:
         """
         Devuelve los métodos disponibles para obtener este tipo de dato.
         
@@ -280,9 +285,13 @@ class AbstractMolecularData(models.Model, metaclass=_AbstractDataModelBase):
     
     @classmethod
     @abstractmethod
-    def retrieve_data(cls, molecule: 'Molecule', method: str, 
-                      config: Optional[Dict[str, Any]] = None,
-                      user_tag: Optional[str] = None) -> 'AbstractMolecularData':
+    def retrieve_data(
+        cls,
+        molecule: 'Molecule',
+        method: str,
+        config: Optional[Dict[str, JSONValue]] = None,
+        user_tag: Optional[str] = None,
+    ) -> 'AbstractMolecularData[T_co]':
         """
         Obtiene el dato usando el método especificado.
         

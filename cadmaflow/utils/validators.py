@@ -5,14 +5,16 @@ minimal interface so callers can rely on a consistent error contract.
 """
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Mapping
+
+from cadmaflow.utils.types import JSONValue
 
 
 class ValidationError(Exception):
     """Raised when validation fails."""
 
 
-def validate_parameters(parameters: Mapping[str, Any], schema: Mapping[str, Any]) -> None:  # pragma: no cover - trivial
+def validate_parameters(parameters: Mapping[str, JSONValue], schema: Mapping[str, JSONValue]) -> None:  # pragma: no cover - trivial
     """Very light validation: ensures required keys exist if 'required' list provided."""
     required = schema.get("required", []) if isinstance(schema, Mapping) else []
     missing = [k for k in required if k not in parameters]

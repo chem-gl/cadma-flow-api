@@ -6,8 +6,7 @@ from cadmaflow.data_types.qsar import (
     MutagenicityData,
     ToxicityData,
 )
-from cadmaflow.models.choices import StatusChoices
-from cadmaflow.models.models import (
+from cadmaflow.models import (
     MolecularFamily,
     Molecule,
     StepExecution,
@@ -15,6 +14,7 @@ from cadmaflow.models.models import (
     WorkflowBranch,
     WorkflowExecution,
 )
+from cadmaflow.models.choices import StatusChoices
 from cadmaflow.models.providers import ProviderExecution
 from cadmaflow.utils.serializers import from_json, to_json
 from cadmaflow.utils.validators import ValidationError, validate_parameters
