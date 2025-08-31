@@ -32,10 +32,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    # Third-party
     'rest_framework',
     'drf_spectacular',
-    # Project apps
+    'cadmaflow.models',  # domain models (molecules, workflows, providers, data variants)
     'cadmaflow.core',
 ]
 
