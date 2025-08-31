@@ -44,7 +44,7 @@ from django.utils import timezone
 from .choices import NativeTypeChoices, SourceChoices
 
 
-class _AbstractDataModelBase(ABCMeta, DjangoModelBase):  # type: ignore[misc]
+class _AbstractDataModelBase(ABCMeta, DjangoModelBase): 
     """Metaclass that combines Django's ``ModelBase`` with ``ABCMeta``.
 
     This allows the model to define ``@abstractmethod`` methods without

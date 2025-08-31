@@ -8,9 +8,6 @@ from django.utils import timezone
 
 from .abstract_models import AbstractMolecularData
 from .choices import StatusChoices
-from .providers import (
-    ProviderExecution,  # noqa: F401  -- ensure model registration for FK resolution
-)
 
 User = get_user_model()
 
