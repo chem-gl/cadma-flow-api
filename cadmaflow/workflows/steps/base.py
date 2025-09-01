@@ -14,36 +14,60 @@ from cadmaflow.utils.types import JSONDict, JSONValue
 
 
 class BaseStep(ABC):
-    """Abstract base class for all workflow steps.
-
-    Responsibilities:
-    - Define the common interface
-    - Provide execution template method
-    - Manage dependency declarations
     """
-    step_id: str  # Unique logical identifier inside the flow (stable)
-    name: str  # Human friendly name
-    description: str  # Short explanation of the purpose of the step
-    order: int  # Intended position (used for ordering; not necessarily contiguous)
+    Clase abstracta base para todos los steps de workflow.
 
-    required_molecule_sets: Sequence[Type] = ()  # Providers that must have produced Molecule sets
-    produced_molecule_sets: Sequence[Type] = ()  # Providers this step will produce
-    required_data_classes: Sequence[Type] = ()  # AbstractMolecularData classes needed as input
-    produced_data_classes: Sequence[Type] = ()  # Data classes produced/transformed by this step
+    Uso típico:
+        - Se extiende para crear steps concretos, definiendo identificador, nombre, descripción y orden.
+        - Permite declarar dependencias de conjuntos moleculares y tipos de datos requeridos/producidos.
+        - Provee métodos para preparar, ejecutar y verificar el avance del step.
 
-    allows_branching: bool = True  # If True, parameter changes can spawn a new branch
-    parameters_schema: Dict[str, JSONValue] = {}  # JSON schema-like structure describing accepted parameters
+    Ejemplo de uso:
+        class MyStep(BaseStep):
+            step_id = "step_a"
+            name = "Primer paso"
+            description = "Ejemplo de step personalizado"
+            order = 1
+            required_data_classes = (LogPData,)
+            produced_data_classes = (ToxicityData,)
+            def _process_step(self, input_data, step_execution, parameters):
+                # lógica de procesamiento
+                return {...}
+    """
+    step_id: str  # Identificador lógico único dentro del flujo (estable)
+    name: str  # Nombre legible para humanos
+    description: str  # Explicación breve del propósito del step
+    order: int  # Posición lógica (usado para ordenar; no necesariamente contiguo)
 
-    def prepare(self, step_execution, parameters: Dict[str, JSONValue]):  # pragma: no cover - hook
+    required_molecule_sets: Sequence[Type] = ()  # Providers que deben haber producido conjuntos moleculares
+    produced_molecule_sets: Sequence[Type] = ()  # Providers que este step producirá
+    required_data_classes: Sequence[Type] = ()  # Clases AbstractMolecularData requeridas como input
+    produced_data_classes: Sequence[Type] = ()  # Clases de datos producidas/transformadas por este step
+
+    allows_branching: bool = True  # Si es True, cambios de parámetros pueden crear una nueva rama
+    parameters_schema: Dict[str, JSONValue] = {}  # Estructura tipo JSON schema para los parámetros aceptados
+
+    def prepare(self, step_execution: object, parameters: Dict[str, JSONValue]) -> None:
+        """
+        Prepara el step antes de ejecutar. Puede ser sobreescrito por subclases.
+        step_execution: instancia de StepExecution (o compatible)
+        parameters: parámetros de configuración para el step
+        Uso típico:
+            - Validar parámetros, inicializar recursos, preparar contexto.
+            - Por defecto no hace nada, pero subclases pueden extenderlo.
+        """
         return None
 
-    def execute(self, step_execution, parameters: Optional[Dict[str, JSONValue]] = None):  # noqa: D401
-        """Template method that wraps concrete ``_process_step`` implementations.
-
-        Subclases sólo necesitan implementar ``_process_step``; este método
-        maneja la orquestación y la marca de finalización. Se mantiene
-        separado de ``_process_step`` para permitir pruebas unitarias/directas
-        del procesamiento puro si es necesario.
+    def execute(self, step_execution: object, parameters: Optional[Dict[str, JSONValue]] = None) -> JSONValue:
+        """
+        Ejecuta el step y retorna los resultados (JSONValue).
+        step_execution: instancia de StepExecution (o compatible)
+        parameters: parámetros de configuración para el step
+        Uso típico:
+            - Llama a prepare() para inicializar el contexto.
+            - Ejecuta la lógica principal mediante _process_step().
+            - Marca el step como COMPLETED y almacena los resultados.
+        Subclases sólo necesitan implementar _process_step(); este método maneja la orquestación.
         """
         input_data = step_execution.input_data_snapshot
         parameters = parameters or {}
@@ -56,10 +80,26 @@ class BaseStep(ABC):
         return results
 
     @abstractmethod
-    def _process_step(self, input_data: JSONDict, step_execution, parameters: Dict[str, JSONValue]):  # noqa: D401
+    def _process_step(self, input_data: JSONDict, step_execution: object, parameters: Dict[str, JSONValue]) -> JSONValue:
+        """
+        Procesa el step concreto. Debe ser implementado por subclases.
+        input_data: snapshot de entrada
+        step_execution: instancia de StepExecution (o compatible)
+        parameters: parámetros de configuración
+        Uso típico:
+            - Implementar la lógica principal del step.
+            - Retornar los resultados en formato JSONValue.
+        """
         raise NotImplementedError
 
-    def can_execute(self, execution) -> bool:
+    def can_execute(self, execution: object) -> bool:
+        """
+        Verifica si el step puede ejecutarse (dependencias satisfechas).
+        execution: instancia de WorkflowExecution (o compatible)
+        Uso típico:
+            - Revisa que todas las familias y miembros tengan los datos requeridos.
+            - Retorna True si todas las dependencias están presentes, False en caso contrario.
+        """
         for family in execution.families.all():
             for data_class in self.required_data_classes:
                 for _ in family.members.all():
@@ -68,7 +108,14 @@ class BaseStep(ABC):
                         return False
         return True
 
-    def get_progress(self, execution) -> float:
+    def get_progress(self, execution: object) -> float:
+        """
+        Calcula el progreso del step (proporción de datos requeridos presentes).
+        execution: instancia de WorkflowExecution (o compatible)
+        Uso típico:
+            - Retorna un valor entre 0 y 1 indicando el porcentaje de datos requeridos presentes.
+            - Útil para mostrar avance en interfaces gráficas o reportes.
+        """
         total_required = 0
         completed = 0
         for family in execution.families.all():

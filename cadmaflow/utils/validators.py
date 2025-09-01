@@ -17,6 +17,8 @@ class ValidationError(Exception):
 def validate_parameters(parameters: Mapping[str, JSONValue], schema: Mapping[str, JSONValue]) -> None:  # pragma: no cover - trivial
     """Very light validation: ensures required keys exist if 'required' list provided."""
     required = schema.get("required", []) if isinstance(schema, Mapping) else []
+    if not isinstance(required, (list, tuple, set)):
+        required = []
     missing = [k for k in required if k not in parameters]
     if missing:
         raise ValidationError(f"Missing required parameters: {missing}")

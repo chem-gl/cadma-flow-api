@@ -40,17 +40,17 @@ class ProviderExecution(models.Model):
         return f"{self.provider_name} ({self.provider_kind}) [{self.status}]"
 
     # --- Lifecycle helpers -------------------------------------------------
-    def mark_started(self):
+    def mark_started(self) -> None:
         self.status = StatusChoices.RUNNING
         self.started_at = timezone.now()
         self.save(update_fields=["status", "started_at"])
 
-    def mark_completed(self):
+    def mark_completed(self) -> None:
         self.status = StatusChoices.COMPLETED
         self.finished_at = timezone.now()
         self.save(update_fields=["status", "finished_at"])
 
-    def mark_failed(self, message: str):
+    def mark_failed(self, message: str) -> None:
         self.status = StatusChoices.FAILED
         self.error_message = message
         self.finished_at = timezone.now()

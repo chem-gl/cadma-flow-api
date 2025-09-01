@@ -7,11 +7,15 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from cadmaflow.models import StepExecution
+from cadmaflow.models import StepExecution, WorkflowExecution
 
 
-def clone_step_executions(step_executions: Iterable[StepExecution], *, new_execution) -> None:  # pragma: no cover - helper
-    """Clone given completed StepExecution records into a new execution."""
+def clone_step_executions(step_executions: Iterable[StepExecution], *, new_execution: WorkflowExecution) -> None:  # pragma: no cover - helper
+    """Clone given completed StepExecution records into a new execution.
+
+    step_executions: iterable de pasos (ya existentes) a clonar.
+    new_execution: ejecución destino donde se crearán copias.
+    """
     for se in step_executions:
         StepExecution.objects.create(
             execution=new_execution,

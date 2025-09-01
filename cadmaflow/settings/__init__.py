@@ -10,18 +10,22 @@ Loads variables from a .env file at project root if present.
 import os
 from importlib import import_module
 from pathlib import Path
+from typing import Callable
 
+# Explicit Optional annotation so assigning None passes mypy
+load_dotenv: Callable[..., bool] | None
 try:  # Optional dependency (python-dotenv)
-	from dotenv import load_dotenv  # type: ignore
+	from dotenv import load_dotenv as _real_load_dotenv  # type: ignore
+	load_dotenv = _real_load_dotenv
 except Exception:  # pragma: no cover
-	load_dotenv = None  # type: ignore
+	load_dotenv = None
 
 BASE_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # Record whether DJANGO_ENV was explicitly present (shell/export) before reading .env
 _had_explicit_django_env = 'DJANGO_ENV' in os.environ
 
-if load_dotenv:  # Load .env without overriding explicit environment
+if load_dotenv is not None:  # Load .env only if dependency available
 	load_dotenv(BASE_ROOT / '.env', override=False)
 
 # If running under pytest and the user did NOT explicitly export DJANGO_ENV

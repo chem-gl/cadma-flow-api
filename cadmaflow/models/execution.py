@@ -1,7 +1,7 @@
 """WorkflowExecution model (separate module)."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, cast
 
 from django.db import models
 from django.utils import timezone
@@ -34,10 +34,33 @@ class WorkflowExecution(models.Model):
     started_at = models.DateTimeField(blank=True, null=True)
     finished_at = models.DateTimeField(blank=True, null=True)
 
-    def __str__(self):  # pragma: no cover
+    # --- Typing helpers (no runtime effect) ---------------------------------
+    if TYPE_CHECKING:  # pragma: no cover - aids static analyzers only
+        # Reverse FK related managers injected by Django via related_name
+        from django.db.models import Manager  # type: ignore
+
+        from .events import WorkflowEvent  # noqa: WPS433
+        from .selection import DataSelection  # noqa: WPS433
+        from .step_execution import StepExecution  # noqa: WPS433
+
+        step_executions: Manager['StepExecution']  # reverse of StepExecution.execution
+        data_selections: Manager['DataSelection']  # reverse of DataSelection.execution
+        events: Manager['WorkflowEvent']  # reverse of WorkflowEvent.execution
+
+    def __str__(self) -> str:  # pragma: no cover
         return f"{self.execution_id} - {self.name}"
 
-    def set_data_retrieval_method(self, family_id: str, data_class_name: str, method: str):
+    def set_data_retrieval_method(self, family_id: str, data_class_name: str, method: str) -> None:
+        """Registra el método de obtención usado/forzado para una familia y clase de dato.
+
+        Almacena una estructura tipo:
+        family_data_config = {
+            "FAM001": {"LogPData": "user_input", "ToxicityData": "user_input"},
+            ...
+        }
+        Esto permite reproducir cómo se obtuvieron los datos o modificar preferencias
+        antes de ejecutar pasos posteriores.
+        """
         cfg = self.family_data_config
         fam_cfg = cfg.setdefault(family_id, {})
         fam_cfg[data_class_name] = method
@@ -45,9 +68,21 @@ class WorkflowExecution(models.Model):
         self.save(update_fields=["family_data_config", "updated_at"]) if hasattr(self, 'updated_at') else self.save()
 
     def get_data_retrieval_method(self, family_id: str, data_class_name: str) -> str | None:
+        """Devuelve el método previamente registrado para (familia, clase).
+
+        Retorna None si no hay registro explícito. Usado por steps para decidir
+        si deben recalcular o reutilizar variantes existentes.
+        """
         return self.family_data_config.get(family_id, {}).get(data_class_name)
 
-    def fork_execution(self, *, new_execution_id: str, target_branch: WorkflowBranch):
+    def fork_execution(self, *, new_execution_id: str, target_branch: WorkflowBranch) -> 'WorkflowExecution':
+        """Crea una nueva ejecución (fork) en otra rama manteniendo estado actual.
+
+        Copia configuración de familias y vincula la ejecución original como parent.
+        No clona StepExecution completados (eso se hace en `branch_execution` cuando
+        la intención es duplicar historia completa). Aquí solo se crea un punto de
+        partida limpio en la nueva rama.
+        """
         clone = WorkflowExecution.objects.create(
             execution_id=new_execution_id,
             name=self.name + f" (fork:{target_branch.branch_id})",
@@ -63,7 +98,13 @@ class WorkflowExecution(models.Model):
         return clone
 
     def start_step(self, *, step_id: str, step_name: str, order: int,
-                   frozen_snapshot: dict, retrieval_methods: dict):
+                   frozen_snapshot: Dict[str, Any], retrieval_methods: Dict[str, Any]) -> 'StepExecution':
+        """Inicia un step creando su StepExecution en estado RUNNING.
+
+        frozen_snapshot: snapshot inmutable de entradas (IDs / valores) para reproducibilidad.
+        retrieval_methods: mapping de (family_id -> {DataClass: method}) usado luego
+        para auditoría y potencial branching.
+        """
         from .step_execution import StepExecution  # local import
         return StepExecution.objects.create(
             execution=self,
@@ -77,7 +118,12 @@ class WorkflowExecution(models.Model):
             data_frozen_at=timezone.now(),
         )
 
-    def complete_step(self, step_exec: 'StepExecution', results: dict):
+    def complete_step(self, step_exec: 'StepExecution', results: Dict[str, Any]) -> None:
+        """Marca un StepExecution como COMPLETED y actualiza punteros de progreso.
+
+        results debe ser JSON serializable (IDs de datos creados, métricas, etc.).
+        Registra un evento para reconstruir timeline en UI / auditoría.
+        """
         step_exec.results = results
         step_exec.status = StatusChoices.COMPLETED
         step_exec.completed_at = timezone.now()
@@ -87,15 +133,26 @@ class WorkflowExecution(models.Model):
         self.save(update_fields=["current_step", "current_step_index"])
         self.log_event(event_type="STEP_COMPLETED", details={"step_id": step_exec.step_id})
 
-    def freeze_family_data(self):  # simplificado
-        snapshot: dict = {}
+    def freeze_family_data(self) -> Dict[str, Dict[str, Dict[str, int]]]:  # simplificado
+        """Crea un snapshot ligero de la composición (moléculas) por familia.
+
+        Este snapshot no incluye valores de propiedades; se usa como base para
+        steps que necesiten saber qué moléculas estaban presentes al inicio del
+        step o para comparar divergencias tras branching.
+        """
+        snapshot: Dict[str, Dict[str, Dict[str, int]]] = {}
         for family in self.families.all():
             fam_block = snapshot.setdefault(family.family_id, {})
             for molecule in family.members.all():
                 fam_block[molecule.inchikey] = {"id": molecule.id}
         return snapshot
 
-    def log_event(self, *, event_type: str, details: dict | None = None):
+    def log_event(self, *, event_type: str, details: Dict[str, Any] | None = None) -> None:
+        """Log de evento simple anexado a la ejecución.
+
+        Se modela como inserción append-only (WorkflowEvent) para permitir
+        reconstruir la línea de tiempo y facilitar debugging de branching.
+        """
         from .events import WorkflowEvent  # local import
         WorkflowEvent.objects.create(
             execution=self,
@@ -103,11 +160,18 @@ class WorkflowExecution(models.Model):
             details=details or {},
         )
 
-    def timeline(self):  # pragma: no cover
-        return list(self.events.order_by("created_at").values("event_type", "details", "created_at"))
+    def timeline(self) -> List[Dict[str, Any]]:  # pragma: no cover
+        # Avoid plugin internal error with values() TypedDict inference by casting.
+        rows: Iterable[Dict[str, Any]] = self.events.order_by("created_at").values("event_type", "details", "created_at")  # type: ignore[no-untyped-call]
+        return [cast(Dict[str, Any], r) for r in rows]
 
-    def select_property_variant(self, *, molecule, property_name: str,
-                                data_instance, user=None):
+    def select_property_variant(self, *, molecule: Any, property_name: str,
+                                data_instance: Any, user: Any | None = None) -> Any:
+        """Selecciona (o actualiza) la variante activa de una propiedad para una molécula.
+
+        Si ya existía un DataSelection se sobreescribe; se dispara detección automática
+        de branching si la propiedad impacta steps completados.
+        """
         from .selection import DataSelection
         ds, created = DataSelection.objects.update_or_create(
             execution=self,
@@ -131,7 +195,7 @@ class WorkflowExecution(models.Model):
         self._auto_fork_if_impacts_completed_steps(property_name=property_name, molecule=molecule)
         return ds
 
-    def get_selected_property(self, *, molecule, property_name: str):
+    def get_selected_property(self, *, molecule: Any, property_name: str) -> Any | None:  # -> object | None
         """Return selected data instance or None.
 
         Deliberately strict: if stored ``data_class`` no longer resolves to a
@@ -169,7 +233,12 @@ class WorkflowExecution(models.Model):
                     return inst
             return None
 
-    def list_variants(self, *, molecule, property_name: str):
+    def list_variants(self, *, molecule: Any, property_name: str) -> List[Any]:  # -> list[object]
+        """Lista todas las variantes (instancias de datos) disponibles para la propiedad dada.
+
+        Explora el registro de subclases en memoria (SUBCLASS_REGISTRY) sin consultar
+        modelos no registrados, manteniendo determinismo.
+        """
         from .abstract_models import SUBCLASS_REGISTRY
         variants = []
         for cls in SUBCLASS_REGISTRY.values():
@@ -177,7 +246,15 @@ class WorkflowExecution(models.Model):
             variants.extend(list(qs))
         return variants
 
-    def _auto_fork_if_impacts_completed_steps(self, *, property_name: str, molecule):
+    def _auto_fork_if_impacts_completed_steps(self, *, property_name: str, molecule: Any) -> None:
+        """Genera automáticamente una rama si cambiar una selección afecta steps cerrados.
+
+        Estrategia: inspeccionar StepExecution completados que declararon haber
+        usado la propiedad (input_properties). Si existe impacto se crea:
+            - nueva WorkflowBranch derivada
+            - nueva WorkflowExecution (fork) con data selections clonadas
+        Registrando evento AUTO_FORK para reconstrucción de historia.
+        """
         from django.db import connection
 
         from .selection import DataSelection
@@ -219,7 +296,12 @@ class WorkflowExecution(models.Model):
             "new_execution": new_exec.execution_id,
         })
 
-    def branch_execution(self, *, branch_label: str | None = None, reason: str | None = None):
+    def branch_execution(self, *, branch_label: str | None = None, reason: str | None = None) -> 'WorkflowExecution':  # -> 'WorkflowExecution'
+        """Crea una nueva ejecución copiando todos los StepExecution completados.
+
+        Diferente de `fork_execution` (que no clona pasos). Útil para branching
+        explícito solicitado por el usuario o para rewind granular.
+        """
         from django.utils import timezone as _tz
 
         from .step_execution import StepExecution
@@ -274,7 +356,12 @@ class WorkflowExecution(models.Model):
         self.log_event(event_type="EXEC_BRANCH_CREATED", details={"new_execution": new_exec.execution_id})
         return new_exec
 
-    def rewind_to(self, *, step_order: int):
+    def rewind_to(self, *, step_order: int) -> 'WorkflowExecution':  # -> 'WorkflowExecution'
+        """Crea una rama nueva rebobinada al estado inmediatamente después del step dado.
+
+        Elimina de la ejecución resultante los StepExecution con orden mayor, permitiendo
+        re-ejecutar a partir de ese punto manteniendo historia anterior intacta.
+        """
         new_exec = self.branch_execution(branch_label=f"rewind-to-{step_order}")
         new_exec.step_executions.filter(order__gt=step_order).delete()
         new_exec.current_step_index = step_order + 1
@@ -287,5 +374,6 @@ class WorkflowExecution(models.Model):
         return new_exec
 
     @classmethod
-    def list_branch_executions(cls, root_workflow):  # pragma: no cover
+    def list_branch_executions(cls, root_workflow: Any) -> Any:  # pragma: no cover
+        # Return type left as Any to avoid tight coupling with Django stubs internal invariance.
         return cls.objects.filter(workflow__root_branch=root_workflow.root_branch or root_workflow)

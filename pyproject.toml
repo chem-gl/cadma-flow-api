@@ -13,6 +13,28 @@ pytest-django = "^4.9.0"
 pytest-cov = "^5.0.0"
 coverage = "^7.6.0"
 
+mypy = "^1.10.0"
+mypy-extensions = "^1.0.0"
+django-stubs = "5.0.0"
+django-stubs-ext = "5.0.0"
+[tool.poetry.group.dev.dependencies]
+djangorestframework-stubs = "^3.15.0"
+[tool.mypy]
+python_version = "3.12"
+# Use canonical plugin path recognized in current env (django-stubs installs mypy_django_plugin)
+plugins = ["mypy_django_plugin.main"]
+strict = true
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_unused_ignores = true
+show_error_codes = true
+exclude = ["migrations"]
+
+[tool.django-stubs]
+django_settings_module = "cadmaflow.settings"
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "cadmaflow.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]

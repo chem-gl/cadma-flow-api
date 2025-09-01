@@ -23,47 +23,97 @@ La salida de `compute` es una lista o iterable de dicts con esquema mínimo:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Iterable
+from typing import Iterable, Protocol, runtime_checkable
 
 from cadmaflow.utils.types import JSONValue
 
 
+@runtime_checkable
+class _MoleculeProto(Protocol):
+	smiles: str
+	inchi: str
+	inchikey: str
+
+
 class PropertyProviderBase(ABC):
-	"""Abstract base for per-molecule property providers."""
+	"""
+	Clase abstracta base para providers de propiedades moleculares.
 
-	key: str = ""
-	provides: list[str] = []  # logical property names produced
-	description: str = ""
-	params_spec: dict[str, dict[str, JSONValue]] = {}
+	Responsabilidad:
+		- Definir el contrato mínimo para cualquier provider que calcule u obtenga
+		  propiedades moleculares (QSAR, físicas, etc.) para una molécula dada.
+		- Cada implementación concreta debe definir un identificador único (key),
+		  una lista de propiedades que produce (provides), una descripción y el método compute.
 
-	def __init_subclass__(cls, **kwargs):  # noqa: D401
+	Contrato de implementación:
+		- key: str (obligatorio, único para cada provider)
+		- provides: list[str] (obligatorio, nombres lógicos de propiedades)
+		- description: str (descripción legible para humanos)
+		- params_spec: dict con la especificación de parámetros aceptados (puede ser vacío)
+		- compute: método que retorna un iterable de diccionarios con el resultado de la propiedad
+	"""
+
+	key: str = ""  # Identificador único del provider
+	provides: list[str] = []  # Lista de nombres lógicos de propiedades producidas
+	description: str = ""  # Descripción legible para humanos
+	params_spec: dict[str, dict[str, JSONValue]] = {}  # Especificación de parámetros aceptados
+
+	def __init_subclass__(cls, **kwargs: object) -> None:
+		"""
+		Hook de inicialización de subclases.
+		Verifica que cada implementación defina un key único y una lista provides no vacía.
+		"""
 		super().__init_subclass__(**kwargs)
 		if not cls.key:
-			raise ValueError(f"Property provider {cls.__name__} must define 'key'")
+			raise ValueError(f"Property provider {cls.__name__} debe definir 'key'")
 		if not cls.provides:
-			raise ValueError(f"Property provider {cls.__name__} must define non-empty 'provides' list")
+			raise ValueError(f"Property provider {cls.__name__} debe definir una lista 'provides' no vacía")
 
 	@classmethod
 	def get_key(cls) -> str:
+		"""
+		Devuelve el identificador único del provider.
+		"""
 		return cls.key
 
 	@classmethod
 	def get_spec(cls) -> dict[str, dict[str, JSONValue]]:
+		"""
+		Devuelve la especificación de parámetros aceptados por el provider.
+		"""
 		return cls.params_spec
 
 	@classmethod
 	def get_provides(cls) -> list[str]:
+		"""
+		Devuelve la lista de nombres lógicos de propiedades producidas por el provider.
+		"""
 		return cls.provides
 
-	def validate_params(self, params: dict[str, JSONValue]) -> dict[str, JSONValue]:  # pragma: no cover
+	def validate_params(self, params: dict[str, JSONValue]) -> dict[str, JSONValue]:
+		"""
+		Validación ligera de parámetros (opcional, puede ser sobreescrito).
+		params: diccionario de parámetros a validar.
+		Retorna el mismo diccionario si es válido.
+		"""
 		return params
 
 	@abstractmethod
-	def compute(self, *, molecule, params: dict[str, JSONValue]) -> Iterable[dict[str, JSONValue]]:
-		"""Yield property result dicts (see module docstring)."""
-		raise NotImplementedError
+	def compute(self, *, molecule: _MoleculeProto, params: dict[str, JSONValue]) -> Iterable[dict[str, JSONValue]]:
+		"""
+		Método abstracto que debe ser implementado por cada provider concreto.
+		Debe retornar un iterable de diccionarios, cada uno representando el resultado de una propiedad.
+		molecule: instancia de Molecule sobre la que se calcula la propiedad.
+		params: diccionario de parámetros de configuración.
+		"""
+		raise NotImplementedError("Las subclases deben implementar compute() retornando resultados de propiedad.")
 
-	def run(self, *, molecule, params: dict[str, JSONValue]) -> list[dict[str, JSONValue]]:
+	def run(self, *, molecule: _MoleculeProto, params: dict[str, JSONValue]) -> list[dict[str, JSONValue]]:
+		"""
+		Punto de entrada público: valida los parámetros y retorna la lista de resultados de propiedad.
+		molecule: instancia de Molecule sobre la que se calcula la propiedad.
+		params: diccionario de parámetros de configuración.
+		"""
 		validated = self.validate_params(params)
 		return list(self.compute(molecule=molecule, params=validated))
 

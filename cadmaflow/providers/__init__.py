@@ -7,6 +7,8 @@ Se minimizan importaciones tempranas para evitar AppRegistryNotReady durante
 AppConfig: ``cadmaflow.models.apps.ModelsConfig``
 """
 
-__all__ = [
+from typing import List
+
+__all__: List[str] = [
 	# listado informativo (sin cargar realmente los modelos aquí)
 ]

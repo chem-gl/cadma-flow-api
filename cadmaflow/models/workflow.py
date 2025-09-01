@@ -1,6 +1,8 @@
 """Workflow blueprint and branching models."""
 from __future__ import annotations
 
+from typing import Any, Dict
+
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.utils import timezone
@@ -31,17 +33,17 @@ class Workflow(models.Model):
     class Meta:
         ordering = ["key"]
 
-    def save(self, *args, **kwargs):  # pragma: no cover
+    def save(self, *args: Any, **kwargs: Any) -> None:  # pragma: no cover
         if self.pk is None and self.branch_of and not self.root_branch:
             self.root_branch = self.branch_of.root_branch or self.branch_of
         super().save(*args, **kwargs)
 
-    def freeze(self, user):  # pragma: no cover
+    def freeze(self, user: Any | None) -> None:  # pragma: no cover
         self.frozen_at = timezone.now()
-        self.frozen_by = user
+        self.frozen_by = user  # type: ignore[assignment]
         self.save(update_fields=["frozen_at", "frozen_by", "updated_at"])
 
-    def branch(self, *, branch_label: str | None = None, reason: str | None = None, user=None) -> 'Workflow':
+    def branch(self, *, branch_label: str | None = None, reason: str | None = None, user: Any | None = None) -> 'Workflow':
         # Ensure uniqueness even when multiple branches are created within the same second.
         base = f"{self.key}-br-{int(timezone.now().timestamp())}"
         candidate = base
@@ -60,7 +62,7 @@ class Workflow(models.Model):
         )
         return new_wf
 
-    def __str__(self):  # pragma: no cover
+    def __str__(self) -> str:  # pragma: no cover
         return f"WF:{self.key} - {self.name}"
 
 
@@ -78,11 +80,11 @@ class WorkflowBranch(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    def __str__(self):  # pragma: no cover
+    def __str__(self) -> str:  # pragma: no cover
         return f"{self.branch_id} - {self.name}"
 
     def fork(self, *, new_branch_id: str, name: str, reason: str | None = None,
-             preference_overrides: dict | None = None):
+             preference_overrides: Dict[str, Any] | None = None) -> 'WorkflowBranch':
         prefs = dict(self.data_selection_preferences)
         if preference_overrides:
             prefs.update(preference_overrides)

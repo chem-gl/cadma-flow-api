@@ -26,10 +26,10 @@ class StepExecution(models.Model):
     class Meta:
         ordering = ['order', 'started_at']
 
-    def __str__(self):  # pragma: no cover
+    def __str__(self) -> str:  # pragma: no cover
         return f"{self.execution.execution_id} - {self.step_name} ({self.status})"
 
-    def mark_failed(self, message: str):
+    def mark_failed(self, message: str) -> None:
         self.status = StatusChoices.FAILED
         self.results = {"error": message}
         self.completed_at = timezone.now()

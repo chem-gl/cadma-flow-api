@@ -25,5 +25,5 @@ class DataSelection(models.Model):
             models.Index(fields=['property_name', 'provider_execution']),
         ]
 
-    def __str__(self):  # pragma: no cover
+    def __str__(self) -> str:  # pragma: no cover
         return f"Sel:{self.property_name} -> {self.data_class}({self.data_id})"

@@ -6,9 +6,9 @@ _prev_debug = globals().get('DEBUG', True)
 DEBUG = os.getenv('DJANGO_DEBUG', str(_prev_debug)).lower() in ('1', 'true', 'yes', 'on')
 _env_hosts = os.getenv('DJANGO_ALLOWED_HOSTS')
 if _env_hosts:
-	ALLOWED_HOSTS = [h.strip() for h in _env_hosts.split(',') if h.strip()]  # type: ignore # noqa: F821
+	ALLOWED_HOSTS = [h.strip() for h in _env_hosts.split(',') if h.strip()]
 else:
-	ALLOWED_HOSTS = ["localhost", "127.0.0.1"]  # type: ignore # noqa: F821
+	ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 _base_dir = globals().get('BASE_DIR')
 DATABASES = {

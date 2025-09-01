@@ -16,5 +16,5 @@ class WorkflowEvent(models.Model):
             models.Index(fields=["execution", "event_type"]),
         ]
 
-    def __str__(self):  # pragma: no cover
+    def __str__(self) -> str:  # pragma: no cover
         return f"{self.execution.execution_id}:{self.event_type}@{self.created_at.isoformat()}"

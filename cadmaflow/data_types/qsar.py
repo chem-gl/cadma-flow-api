@@ -22,7 +22,7 @@ from cadmaflow.utils.types import JSONValue
 
 
 class _BaseSimpleFloatData(AbstractMolecularData[float]):
-    class Meta:
+    class Meta(AbstractMolecularData.Meta):
         abstract = True
 
     def get_native_type(self) -> str:  # type: ignore[override]
@@ -47,7 +47,7 @@ class _BaseSimpleFloatData(AbstractMolecularData[float]):
         }
 
     @classmethod
-    def retrieve_data(cls, molecule, method: str, *, config: Optional[Dict[str, JSONValue]] = None,
+    def retrieve_data(cls, molecule, method: str, config: Optional[Dict[str, JSONValue]] = None,
                       user_tag: Optional[str] = None):  # type: ignore[override]
         methods = cls.get_data_retrieval_methods()
         if method not in methods:
@@ -58,7 +58,7 @@ class _BaseSimpleFloatData(AbstractMolecularData[float]):
                 raise ValueError("Se requiere 'value' en config para user_input")
             obj = cls(
                 molecule=molecule,
-                value_json=json.dumps(float(cfg["value"])),
+                value_json=json.dumps(float(cfg["value"]) if isinstance(cfg["value"], (int, float, str)) else float("nan")),
                 native_type=NativeTypeChoices.FLOAT,
                 source=SourceChoices.USER,
                 source_name="user-input",
@@ -71,7 +71,7 @@ class _BaseSimpleFloatData(AbstractMolecularData[float]):
 
 
 class _BaseSimpleStringData(AbstractMolecularData[str]):
-    class Meta:
+    class Meta(AbstractMolecularData.Meta):
         abstract = True
 
     def get_native_type(self) -> str:  # type: ignore[override]
@@ -96,7 +96,7 @@ class _BaseSimpleStringData(AbstractMolecularData[str]):
         }
 
     @classmethod
-    def retrieve_data(cls, molecule, method: str, *, config: Optional[Dict[str, JSONValue]] = None,
+    def retrieve_data(cls, molecule, method: str, config: Optional[Dict[str, JSONValue]] = None,
                       user_tag: Optional[str] = None):  # type: ignore[override]
         methods = cls.get_data_retrieval_methods()
         if method not in methods:
@@ -120,31 +120,64 @@ class _BaseSimpleStringData(AbstractMolecularData[str]):
 
 
 class LogPData(_BaseSimpleFloatData):
-    """LogP partition coefficient (octanol/water) simple float value.
-
-    Retrieval methods currently: user_input (expects {'value': float}).
     """
-    PROPERTY_NAME = "logp"
-    class Meta:
+    Clase concreta para el coeficiente de partición LogP (octanol/agua).
+
+    Uso típico:
+        - Se utiliza para almacenar el valor de LogP calculado o proporcionado por el usuario.
+        - El método de obtención principal es 'user_input', que espera un diccionario {'value': float}.
+        - Permite la serialización/deserialización automática y validación de tipo.
+    Ejemplo de creación:
+        LogPData.retrieve_data(molecule, method="user_input", config={"value": 2.5})
+    """
+    PROPERTY_NAME = "logp"  # Nombre lógico de la propiedad
+    class Meta(_BaseSimpleFloatData.Meta):
         app_label = 'cadmaflow_models'
 
 
 class ToxicityData(_BaseSimpleStringData):
-    """Toxicity classification / label (string)."""
-    PROPERTY_NAME = "toxicity"
-    class Meta:
+    """
+    Clase concreta para la clasificación de toxicidad (etiqueta string).
+
+    Uso típico:
+        - Permite almacenar una etiqueta de toxicidad (ej: "Tóxico", "No tóxico") para una molécula.
+        - El método de obtención principal es 'user_input', que espera un diccionario {'value': str}.
+        - Facilita la validación y serialización automática.
+    Ejemplo de creación:
+        ToxicityData.retrieve_data(molecule, method="user_input", config={"value": "Tóxico"})
+    """
+    PROPERTY_NAME = "toxicity"  # Nombre lógico de la propiedad
+    class Meta(_BaseSimpleStringData.Meta):
         app_label = 'cadmaflow_models'
 
 
 class AbsorptionData(_BaseSimpleStringData):
-    """Absorption qualitative classification (string)."""
-    PROPERTY_NAME = "absorption"
-    class Meta:
+    """
+    Clase concreta para la clasificación cualitativa de absorción (string).
+
+    Uso típico:
+        - Permite almacenar una etiqueta de absorción (ej: "Alta", "Baja") para una molécula.
+        - El método de obtención principal es 'user_input', que espera un diccionario {'value': str}.
+        - Facilita la validación y serialización automática.
+    Ejemplo de creación:
+        AbsorptionData.retrieve_data(molecule, method="user_input", config={"value": "Alta"})
+    """
+    PROPERTY_NAME = "absorption"  # Nombre lógico de la propiedad
+    class Meta(_BaseSimpleStringData.Meta):
         app_label = 'cadmaflow_models'
 
 
 class MutagenicityData(_BaseSimpleStringData):
-    """Mutagenicity qualitative classification (string)."""
-    PROPERTY_NAME = "mutagenicity"
-    class Meta:
+    """
+    Clase concreta para la clasificación cualitativa de mutagenicidad (string).
+
+    Uso típico:
+        - Permite almacenar una etiqueta de mutagenicidad (ej: "Mutagénico", "No mutagénico") para una molécula.
+        - El método de obtención principal es 'user_input', que espera un diccionario {'value': str}.
+        - Facilita la validación y serialización automática.
+    Ejemplo de creación:
+        MutagenicityData.retrieve_data(molecule, method="user_input", config={"value": "Mutagénico"})
+    """
+    PROPERTY_NAME = "mutagenicity"  # Nombre lógico de la propiedad
+    class Meta(_BaseSimpleStringData.Meta):
         app_label = 'cadmaflow_models'
